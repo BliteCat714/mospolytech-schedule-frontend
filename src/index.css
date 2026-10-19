@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-bg: #F6F5F2;
+  --color-surface: #FFFFFF;
+  --color-surface-2: #EEEDE9;
+  --color-text: #15181D;
+  --color-muted: #6B7280;
+  --color-border: #E6E3DC;
+  --color-accent: #4F46E5;
+  --color-accent-soft: #EEF0FF;
+
+  --color-lecture: #6366F1;
+  --color-practice: #14B8A6;
+  --color-lab: #F59E0B;
+  --color-project: #8B5CF6;
+  --color-pe: #F43F5E;
+
+  --radius-card: 1rem;
+  --shadow-card: 0 1px 2px rgba(17, 20, 24, 0.04),
+    0 4px 16px -6px rgba(17, 20, 24, 0.08);
+  --shadow-card-hover: 0 2px 4px rgba(17, 20, 24, 0.05),
+    0 10px 24px -10px rgba(17, 20, 24, 0.16);
+}
+
+.dark {
+  --color-bg: #0B0E13;
+  --color-surface: #12161E;
+  --color-surface-2: #1A1F29;
+  --color-text: #E8EAED;
+  --color-muted: #8B95A5;
+  --color-border: #232A36;
+  --color-accent: #8B93FF;
+  --color-accent-soft: #1E1B4B;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3),
+    0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  --shadow-card-hover: 0 2px 4px rgba(0, 0, 0, 0.35),
+    0 14px 32px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* Фон приложения с лёгким акцентным градиентом */
+.app-bg {
+  background:
+    radial-gradient(1200px 400px at 100% -10%, color-mix(in oklab, var(--color-accent) 8%, transparent), transparent 60%),
+    radial-gradient(900px 300px at -10% 110%, color-mix(in oklab, var(--color-pe) 6%, transparent), transparent 60%),
+    var(--color-bg);
+}
+
+/* Карточка */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.15s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* Пунктирная «пустая» ячейка */
+.empty-slot {
+  border: 1px dashed color-mix(in oklab, var(--color-border) 90%, transparent);
+  border-radius: var(--radius-card);
+  background:
+    repeating-linear-gradient(45deg,
+      transparent 0 8px,
+      color-mix(in oklab, var(--color-border) 35%, transparent) 8px 9px);
+  opacity: 0.6;
+}
+
+/* Заголовок дня в недельной сетке */
+.day-head {
+  border-radius: 12px;
+  padding: 6px 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.day-head:hover {
+  background: color-mix(in oklab, var(--color-accent) 6%, transparent);
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
