@@ -9,7 +9,7 @@ import { Empty, ErrorBox, Loading } from '../components/Status'
 
 export default function PE() {
   const { user } = useApp()
-  const studentId = user?.role === 'student' ? user.id : undefined
+  const studentId = user?.role === 'student' ? user.studentId : undefined
   const [selectedDir, setSelectedDir] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -65,6 +65,7 @@ export default function PE() {
         Выберите направление и удобные пары (не более одной в день, без конфликтов с основным расписанием)
       </p>
 
+      {studentId === undefined && <p className="text-sm text-muted mb-4">Вы смотрите расписание группы. Персональная запись на физкультуру пока недоступна.</p>}
       {directions.loading && <Loading />}
       {directions.error && <ErrorBox message={directions.error} onRetry={directions.reload} />}
       {!directions.loading && !directions.error && (directions.data ?? []).length === 0 && (
@@ -113,7 +114,7 @@ export default function PE() {
                       <button
                         key={s.id}
                         onClick={() => toggle(s)}
-                        disabled={blocked || busy}
+                        disabled={studentId === undefined || blocked || busy}
                         className={`text-left p-3 rounded-xl border transition ${
                           active
                             ? 'border-accent bg-gradient-to-br from-accent-soft to-transparent'

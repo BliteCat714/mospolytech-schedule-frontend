@@ -1,4 +1,6 @@
-const BASE_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/schedule').replace(/\/$/, '')
+import { isMockMode } from './dataSource'
+
+const BASE_URL = (import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api/schedule').replace(/\/$/, '')
 const TIMEOUT_MS = 15000
 
 export class ApiError extends Error {
@@ -37,6 +39,11 @@ async function request<T>(
   path: string,
   opts: { query?: Query; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<T> {
+  if (isMockMode) {
+    const { mockRequest } = await import('../mocks/api')
+    opts.signal?.throwIfAborted()
+    return mockRequest<T>(method, path, opts)
+  }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   opts.signal?.addEventListener('abort', () => controller.abort())
@@ -70,11 +77,18 @@ export const api = {
   delete: (path: string) => request<void>('DELETE', path),
   /** Все элементы пагинированного списка DRF. */
   list: async <T>(path: string, query?: Query, signal?: AbortSignal): Promise<T[]> => {
-    const page = await request<{ results: T[] }>('GET', path, {
-      query: { ...query, page_size: 1000 },
-      signal,
-    })
-    return page?.results ?? []
+    const results: T[] = []
+    let pageNumber = 1
+    let next: string | null
+    do {
+      const page = await request<{ results: T[]; next: string | null }>('GET', path, {
+        query: { ...query, page_size: 1000, page: pageNumber++ },
+        signal,
+      })
+      results.push(...page.results)
+      next = page.next
+    } while (next)
+    return results
   },
 }
 

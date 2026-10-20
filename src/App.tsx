@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import Schedule from './pages/Schedule'
 import PE from './pages/PE'
 import Rooms from './pages/Rooms'
+import { targetKey } from './lib/directory'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { user } = useApp()
@@ -19,6 +20,7 @@ function StudentOnly({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
+  const { viewedSchedule } = useApp()
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
@@ -29,7 +31,7 @@ function AppRoutes() {
           </Protected>
         }
       >
-        <Route path="/" element={<Schedule />} />
+        <Route path="/" element={<Schedule key={viewedSchedule ? targetKey(viewedSchedule) : 'none'} />} />
         <Route path="/pe" element={<StudentOnly><PE /></StudentOnly>} />
         <Route path="/rooms" element={<Rooms />} />
       </Route>

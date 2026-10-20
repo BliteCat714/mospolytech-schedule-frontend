@@ -1,32 +1,59 @@
-# React + TypeScript + Vite
+# Расписание — фронтенд
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + Vite. По умолчанию приложение работает на локальных тестовых данных, запуск бэкенда не нужен.
 
-Currently, two official plugins are available:
+Текущий этап — работа исключительно над фронтендом. Бэкенд не меняем; тестовые данные можно менять. Потребности в новых ручках или другом формате данных фиксируем в [требованиях к бэкенду](docs/backend-requirements/README.md).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Запуск
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```sh
+npm ci
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Откройте адрес из вывода Vite (обычно http://localhost:5173). При первом заходе выберите «Я студент» и группу либо «Я преподаватель» и найдите себя по имени и фамилии. В тестовом режиме доступны три группы и три преподавателя.
+
+Над профилем находится раскрывающийся вверх блок «Избранные». В общей строке можно искать группы и преподавателей, открывать их расписания и затем сохранять кнопкой «Добавить в избранное». Просмотр другого расписания не меняет основной профиль; вернуться к своему можно нажатием на профиль или «Моё расписание» в избранных. Избранное можно удалять из списка или кнопкой «В избранном».
+
+Профиль, открытое расписание и избранные сохраняются в localStorage с префиксом `mock:profile:v2` (для API — `profile:v2`); тема — в `theme`. «Сменить профиль» сбрасывает основной и открытый профиль, сохраняя избранные. Старый dev-кэш `mock:user` не используется: при переходе на групповые профили потребуется один раз выбрать роль заново.
+
+Персональная запись на физкультуру требует ID конкретного студента. Выбор группы его не устанавливает, поэтому доступны просмотр направлений и слотов, а запись отключена. Старые тестовые записи остаются в `mock:pe-enrollments:v1`, но к группе не привязываются. Потребности будущей интеграции описаны в `docs/backend-requirements/README.md`.
+
+Преподавательские расписания сохраняют исходные даты импорта. Если текущая неделя вне периода, нажмите «Открыть начало периода расписания». Правила с непустым `week_raw` пока пропускаются существующим экраном расписания.
+
+## Источник данных
+
+`src/mocks/backend.json` — снимок ответов локального Django API из соседнего репозитория `mospolytech-schedule-backend`:
+
+- `semesters/`, `students/`, `schedule/students/<id>/` — существующий демо-набор генератора;
+- `imported/teachers/<id>/schedule/` — импортированные преподавательские расписания с исходными датами;
+- `rooms/`, `schedule/free-rooms/` — аудитории и их занятость для 6 дней × 7 пар;
+- физкультура — направления и слоты из `schedule_generator/management/commands/seed_pe.py` (в локальной базе физкультура пока пустая).
+
+Mock API сохраняет используемые фронтом формы ответов, пагинацию и фильтры. Запись на физкультуру проверяет одну запись в день и пересечение с основными парами. Изменения остаются в браузере. Это тестовый снимок, а не актуальное опубликованное расписание университета.
+
+Обновление снимка из PowerShell в каталоге фронта (зависимости бэка должны быть установлены):
+
+```powershell
+& ..\mospolytech-schedule-backend\.venv\Scripts\python.exe scripts\export-backend-fixtures.py ..\mospolytech-schedule-backend
+```
+
+Экспорт использует только GET-запросы к API внутри Django, SQLite принудительно переведена в режим query_only. Данные бэка не меняются.
+
+## Подключение бэкенда
+
+Скопируйте `.env.example` в `.env.local`, выставьте:
+
+```dotenv
+VITE_DATA_SOURCE=api
+VITE_API_URL=http://localhost:8000/api/schedule
+```
+
+Перезапустите Vite. Для возврата к тестовым данным задайте `VITE_DATA_SOURCE=mock`. По умолчанию и dev-сервер, и сборка используют mock-режим; при сборке для реального сервера обязательно задайте `VITE_DATA_SOURCE=api`.
+
+## Проверки
+
+```sh
+npm run build
+npm run lint
+```
