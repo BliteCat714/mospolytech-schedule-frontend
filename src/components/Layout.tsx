@@ -22,7 +22,7 @@ export default function Layout() {
 
         {[
           { to: '/', icon: Calendar, label: 'Расписание' },
-          { to: '/pe', icon: Dumbbell, label: 'Физкультура' },
+          ...(user?.role === 'student' ? [{ to: '/pe', icon: Dumbbell, label: 'Физкультура' }] : []),
           { to: '/rooms', icon: DoorOpen, label: 'Кабинеты' },
         ].map(({ to, icon: Icon, label }) => (
           <NavLink

@@ -1,7 +1,5 @@
-import type { Lesson } from '../data/mock'
+import type { Lesson } from '../lib/types'
 import { typeColor, slotNumber } from '../lib/schedule'
-import { format, parseISO } from 'date-fns'
-import { ru } from 'date-fns/locale'
 import { X, Clock, MapPin, User as UserIcon } from 'lucide-react'
 
 interface Props {
@@ -62,21 +60,10 @@ export default function LessonCard({ lesson, onRemove }: Props) {
           </p>
           <p className="inline-flex items-center gap-1">
             <MapPin size={11} />
-            {lesson.building}, каб. {lesson.room}
+            {lesson.place}
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-1 mt-2">
-          {lesson.periods.map((p, i) => (
-            <span
-              key={i}
-              className="text-[10px] px-1.5 py-0.5 rounded-md bg-surface-2 text-muted"
-            >
-              {format(parseISO(p.from), 'd MMM', { locale: ru })} –{' '}
-              {format(parseISO(p.to), 'd MMM', { locale: ru })}
-            </span>
-          ))}
-        </div>
       </div>
     </div>
   )

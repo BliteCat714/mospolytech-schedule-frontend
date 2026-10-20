@@ -12,6 +12,12 @@ function Protected({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function StudentOnly({ children }: { children: React.ReactNode }) {
+  const { user } = useApp()
+  if (user?.role !== 'student') return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -24,7 +30,7 @@ function AppRoutes() {
         }
       >
         <Route path="/" element={<Schedule />} />
-        <Route path="/pe" element={<PE />} />
+        <Route path="/pe" element={<StudentOnly><PE /></StudentOnly>} />
         <Route path="/rooms" element={<Rooms />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

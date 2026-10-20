@@ -3,43 +3,62 @@ import { format, addDays, startOfWeek } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { lessons, type Lesson } from '../data/mock'
-import {
-    getLessonsForUser,
-    getPElessonsForUser,
-    SLOT_TIMES,
-} from '../lib/schedule'
+import { api, errText } from '../lib/api'
+import type { Lesson, PEEnrollment, ScheduledClass } from '../lib/types'
+import { classToLesson, enrollmentToLesson, lessonsForDay, SLOT_TIMES } from '../lib/schedule'
+import { useAsync } from '../lib/useAsync'
 import LessonCard from '../components/LessonCard'
 import DatePicker from '../components/DatePicker'
+import { Empty, ErrorBox, Loading } from '../components/Status'
 
 type ViewMode = 'day' | 'week'
 
 export default function Schedule() {
-    const { user, updateUser } = useApp()
+    const { user, semester } = useApp()
     const [mode, setMode] = useState<ViewMode>('week')
     const [current, setCurrent] = useState(new Date())
     const [pickerOpen, setPickerOpen] = useState(false)
+    const [actionError, setActionError] = useState<string | null>(null)
 
     const weekStart = startOfWeek(current, { weekStartsOn: 1 })
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
 
-    const allLessons = useMemo(
-        () => [...lessons, ...getPElessonsForUser(user)],
-        [user],
+    const semesterId = semester.data?.id
+    const data = useAsync<Lesson[]>(
+        async (signal) => {
+            if (!user || semesterId === undefined) return []
+            const kind = user.role === 'student' ? 'students' : 'teachers'
+            const classes = await api.get<ScheduledClass[]>(
+                `schedule/${kind}/${user.id}/`,
+                { semester: semesterId },
+                signal,
+            )
+            const lessons = (classes ?? []).map(classToLesson)
+            if (user.role === 'student') {
+                const pe = await api.list<PEEnrollment>('pe/enrollments/', { student: user.id }, signal)
+                lessons.push(...pe.map(enrollmentToLesson))
+            }
+            return lessons
+        },
+        [user?.id, user?.role, semesterId],
     )
 
-    const filterDay = (date: Date) =>
-        getLessonsForUser(allLessons, user?.group, user?.projectGroupId, date)
+    const allLessons = useMemo(() => data.data ?? [], [data.data])
+    const filterDay = (date: Date) => lessonsForDay(allLessons, date)
 
     const handleSelectDate = (d: Date) => {
         setCurrent(d)
         setMode('day')
     }
 
-    const removePE = (lesson: Lesson) => {
-        if (!user?.peSlots) return
-        const slotId = lesson.id.replace(/^pe-/, '')
-        updateUser({ peSlots: user.peSlots.filter((id) => id !== slotId) })
+    const removePE = async (lesson: Lesson) => {
+        setActionError(null)
+        try {
+            await api.delete(`pe/enrollments/${lesson.id.replace(/^pe-/, '')}/`)
+            data.reload()
+        } catch (e) {
+            setActionError(errText(e))
+        }
     }
 
     return (
@@ -115,10 +134,20 @@ export default function Schedule() {
                     </button>
                 </div>
             </div>
-            
+
+            {(semester.loading || data.loading) && <Loading />}
+            {semester.error && <ErrorBox message={semester.error} onRetry={semester.reload} />}
+            {data.error && <ErrorBox message={data.error} onRetry={data.reload} />}
+            {actionError && <ErrorBox message={actionError} />}
+            {!semester.loading && !semester.error && !semester.data && (
+                <Empty text="Семестр ещё не создан" />
+            )}
+            {!data.loading && !data.error && semester.data && allLessons.length === 0 && (
+                <Empty text="Расписание пока не сформировано" />
+            )}
 
             {/* Day view */}
-            {mode === 'day' && (
+            {mode === 'day' && !data.loading && allLessons.length > 0 && (
                 <div className="overflow-x-auto min-h-[560px]">
                     <div className="grid grid-cols-[88px_1fr] gap-2 items-start content-start">
                         {SLOT_TIMES.map((slot) => {
@@ -160,7 +189,7 @@ export default function Schedule() {
             )}
 
             {/* Week view */}
-            {mode === 'week' && (
+            {mode === 'week' && !data.loading && allLessons.length > 0 && (
                 <div className="overflow-x-auto min-h-[560px]">
                     <div className="min-w-[1100px]">
                         {/* Заголовки дней */}

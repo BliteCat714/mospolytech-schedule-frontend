@@ -1,5 +1,4 @@
-import { isWithinInterval, parseISO } from 'date-fns'
-import { type Lesson, type Period, type User, type PEslot, peSlots } from '../data/mock'
+import type { Lesson, LessonType, PEEnrollment, ScheduledClass } from './types'
 
 export const SLOT_TIMES: { n: number; start: string; end: string }[] = [
   { n: 1, start: '09:00', end: '10:30' },
@@ -11,39 +10,62 @@ export const SLOT_TIMES: { n: number; start: string; end: string }[] = [
   { n: 7, start: '19:30', end: '21:00' },
 ]
 
+export const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+
 export function slotNumber(start: string): number | null {
   const found = SLOT_TIMES.find((s) => s.start === start)
   return found ? found.n : null
 }
 
-export function isLessonActive(lesson: Lesson, date: Date): boolean {
-  const iso = date.toISOString().slice(0, 10)
-  return lesson.periods.some((p: Period) =>
-    isWithinInterval(parseISO(iso), {
-      start: parseISO(p.from),
-      end: parseISO(p.to),
-    }),
-  )
+/** День недели в формате бэкенда: 0 = пн … 6 = вс. */
+export function weekdayIndex(date: Date): number {
+  return (date.getDay() + 6) % 7
 }
 
-export function getLessonsForUser(
-  allLessons: Lesson[],
-  userGroup: string | undefined,
-  projectGroupId: string | undefined,
-  date: Date,
-): Lesson[] {
-  return allLessons.filter((l) => {
-    const isPersonal = l.type === 'pe'
-    const belongs =
-      isPersonal ||
-      (userGroup && l.groupIds.includes(userGroup)) ||
-      (projectGroupId && l.groupIds.includes(projectGroupId))
-    if (!belongs) return false
-    if (l.dayOfWeek !== date.getDay() && !(date.getDay() === 0 && l.dayOfWeek === 7)) {
-      return false
-    }
-    return isLessonActive(l, date)
-  })
+export const hhmm = (t: string | null | undefined): string => (t ?? '').slice(0, 5)
+
+const TYPE_MAP: Record<string, LessonType> = {
+  LECTURE: 'lecture',
+  PRACTICE: 'practice',
+  LAB: 'lab',
+  PD: 'project',
+  PE: 'pe',
+}
+
+export function classToLesson(c: ScheduledClass): Lesson {
+  const slot = SLOT_TIMES.find((s) => s.n === c.slot_lesson_number)
+  const start = hhmm(c.slot_start_time) || slot?.start || ''
+  const end = hhmm(c.slot_end_time) || slot?.end || ''
+  const room = c.room_name ? `${c.location_name ? `${c.location_name}, ` : ''}каб. ${c.room_name}` : 'Онлайн'
+  return {
+    id: `c-${c.id}`,
+    title: c.subject_name,
+    type: TYPE_MAP[c.lesson_type] ?? 'other',
+    teacher: c.teacher_name ?? '—',
+    place: room,
+    dayOfWeek: c.slot_day,
+    start,
+    end,
+  }
+}
+
+export function enrollmentToLesson(e: PEEnrollment): Lesson {
+  const s = e.slot_detail
+  return {
+    id: `pe-${e.id}`,
+    title: 'Физическая культура',
+    type: 'pe',
+    teacher: 'Кафедра физвоспитания',
+    place: s.place,
+    dayOfWeek: s.day_of_week,
+    start: hhmm(s.start_time),
+    end: hhmm(s.end_time),
+  }
+}
+
+export function lessonsForDay(all: Lesson[], date: Date): Lesson[] {
+  const day = weekdayIndex(date)
+  return all.filter((l) => l.dayOfWeek === day)
 }
 
 export function typeColor(type: string): string {
@@ -55,77 +77,4 @@ export function typeColor(type: string): string {
     case 'pe': return 'bg-pe'
     default: return 'bg-muted'
   }
-}
-
-// -------- Физкультура --------
-
-const PE_PERIOD: Period = { from: '2026-09-01', to: '2026-12-30' }
-
-export function peSlotToLesson(slot: PEslot): Lesson {
-  const dir = slot.direction
-  return {
-    id: `pe-${slot.id}`,
-    title: `Физическая культура (${dirLabel(dir)})`,
-    type: 'pe',
-    teacher: 'Кафедра физвоспитания',
-    building: slot.building,
-    room: slot.room,
-    dayOfWeek: slot.dayOfWeek,
-    start: slot.start,
-    end: slot.end,
-    periods: [PE_PERIOD],
-    groupIds: [],
-  }
-}
-
-export function getPElessonsForUser(user: User | null): Lesson[] {
-  if (!user || !user.peSlots || user.peSlots.length === 0) return []
-  return user.peSlots
-    .map((id) => peSlots.find((s) => s.id === id))
-    .filter((s): s is PEslot => Boolean(s))
-    .map(peSlotToLesson)
-}
-
-/**
- * Проверка конфликта: пересекается ли выбранный PE-слот
- * с уже существующей парой пользователя (по дню и времени).
- */
-export function peSlotConflicts(
-  slot: PEslot,
-  userLessons: Lesson[],
-): Lesson | null {
-  const SLOT_TOLERANCE_MIN = 1 // минута, для сравнения «равное время»
-  const toMin = (t: string) => {
-    const [h, m] = t.split(':').map(Number)
-    return h * 60 + m
-  }
-  const aStart = toMin(slot.start)
-  const aEnd = toMin(slot.end)
-
-  for (const l of userLessons) {
-    if (l.dayOfWeek !== slot.dayOfWeek) continue
-    if (l.type === 'pe') continue
-    const bStart = toMin(l.start)
-    const bEnd = toMin(l.end)
-    if (aStart < bEnd && bStart < aEnd) {
-      // пересечение интервалов
-      return l
-    }
-  }
-  return null
-}
-
-export function dirLabel(id: string): string {
-  const map: Record<string, string> = {
-    aerobics: 'аэробика',
-    volleyball: 'волейбол',
-    basketball: 'баскетбол',
-    football: 'футбол',
-    swimming: 'плавание',
-    athletics: 'лёгкая атлетика',
-    chess: 'шахматы',
-    tabletennis: 'настольный теннис',
-    yoga: 'йога',
-  }
-  return map[id] ?? id
 }
