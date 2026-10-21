@@ -1,93 +1,127 @@
-import { useState } from 'react'
-import { Search } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { format } from 'date-fns'
+import { Search, Users, UserRound } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { api } from '../lib/api'
-import type { FreeRoomsResponse } from '../lib/types'
-import { DAY_NAMES, SLOT_TIMES, weekdayIndex } from '../lib/schedule'
+import type { RoomsStatusResponse } from '../lib/types'
+import { matchesSearch } from '../lib/directory'
+import { weekdayNumber } from '../lib/schedule'
 import { useAsync } from '../lib/useAsync'
 import { Empty, ErrorBox, Loading } from '../components/Status'
 
-const selectCls =
+type StatusFilter = 'all' | 'free' | 'busy'
+
+const PAGE = 120
+const inputCls =
   'px-3 py-2 rounded-xl bg-surface border border-border text-sm outline-none focus:border-accent'
+const FILTERS: { id: StatusFilter; label: string }[] = [
+  { id: 'all', label: 'Все' },
+  { id: 'free', label: 'Свободные' },
+  { id: 'busy', label: 'Занятые' },
+]
 
 export default function Rooms() {
-  const { semester } = useApp()
+  const { pairTimes } = useApp()
   const [query, setQuery] = useState('')
-  const [day, setDay] = useState(() => Math.min(weekdayIndex(new Date()), 5))
-  const [lesson, setLesson] = useState(1)
-  const semesterId = semester.data?.id
+  const [date, setDate] = useState(() => format(new Date(), 'yyyy-MM-dd'))
+  const [pair, setPair] = useState(1)
+  const [filter, setFilter] = useState<StatusFilter>('all')
+  const [location, setLocation] = useState('')
+  const [limit, setLimit] = useState(PAGE)
 
-  const rooms = useAsync<FreeRoomsResponse | null>(
-    async (signal) => {
-      if (semesterId === undefined) return null
-      return api.get<FreeRoomsResponse>(
-        'schedule/free-rooms/',
-        { semester: semesterId, day_of_week: day, lesson_number: lesson },
-        signal,
-      )
-    },
-    [semesterId, day, lesson],
+  const weekday = weekdayNumber(new Date(`${date}T12:00:00`))
+  const data = useAsync<RoomsStatusResponse>(
+    (signal) => api.get<RoomsStatusResponse>('rasp/rooms/status/', { weekday, pair, date }, signal),
+    [weekday, pair, date],
   )
 
-  const q = query.toLowerCase()
-  const filtered = (rooms.data?.rooms ?? []).filter((r) =>
-    `${r.name} ${r.building_name ?? ''} ${r.location_name}`.toLowerCase().includes(q),
-  )
+  const rooms = data.data?.rooms ?? []
+  const counts = useMemo(() => {
+    const inLocation = rooms.filter((r) => !location || r.location === location)
+    const busy = inLocation.filter((r) => r.busy).length
+    return { all: inLocation.length, busy, free: inLocation.length - busy }
+  }, [rooms, location])
+
+  const filtered = useMemo(() => rooms.filter((r) => {
+    if (location && r.location !== location) return false
+    if (filter === 'free' && r.busy) return false
+    if (filter === 'busy' && !r.busy) return false
+    if (!query.trim()) return true
+    // поиск по аудитории, корпусу, а у занятых — ещё по группе, преподавателю и предмету
+    const text = [r.name, r.location, ...r.lessons.flatMap((l) => [l.subject, ...l.groups, ...l.teachers])].join(' ')
+    return matchesSearch(text, query)
+  }), [rooms, location, filter, query])
+
+  const reset = () => setLimit(PAGE)
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <h1 className="text-xl font-bold mb-1">Свободные кабинеты</h1>
-      <p className="text-muted text-sm mb-6">Аудитории, не занятые по расписанию в выбранную пару</p>
+    <div className="max-w-4xl mx-auto">
+      <h1 className="text-xl font-bold mb-1">Кабинеты</h1>
+      <p className="text-muted text-sm mb-5">Какие аудитории заняты и какие свободны в выбранную дату и пару</p>
 
       <div className="flex flex-wrap gap-2 mb-3">
-        <select value={day} onChange={(e) => setDay(+e.target.value)} className={selectCls}>
-          {DAY_NAMES.slice(0, 6).map((n, i) => (
-            <option key={n} value={i}>{n}</option>
+        <input type="date" value={date} onChange={(e) => { if (e.target.value) { setDate(e.target.value); reset() } }} className={inputCls} aria-label="Дата" />
+        <select value={pair} onChange={(e) => { setPair(+e.target.value); reset() }} className={inputCls} aria-label="Пара">
+          {(pairTimes.data ?? []).map((t) => (
+            <option key={t.pair} value={t.pair}>{t.pair} пара · {t.start}–{t.end}</option>
           ))}
         </select>
-        <select value={lesson} onChange={(e) => setLesson(+e.target.value)} className={selectCls}>
-          {SLOT_TIMES.map((s) => (
-            <option key={s.n} value={s.n}>{s.n} пара · {s.start}–{s.end}</option>
-          ))}
+        <select value={location} onChange={(e) => { setLocation(e.target.value); reset() }} className={inputCls} aria-label="Корпус">
+          <option value="">Все корпуса</option>
+          {(data.data?.locations ?? []).map((l) => <option key={l} value={l}>{l}</option>)}
         </select>
       </div>
 
-      <div className="relative mb-4">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Поиск по корпусу или номеру..."
-          className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-surface border border-border text-sm outline-none focus:border-accent transition"
-        />
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <div className="flex bg-surface rounded-xl border border-border p-1" role="group" aria-label="Статус">
+          {FILTERS.map((f) => (
+            <button key={f.id} onClick={() => { setFilter(f.id); reset() }} aria-pressed={filter === f.id}
+              className={`h-8 px-3 text-sm rounded-lg transition ${filter === f.id ? 'bg-accent text-white' : 'text-muted hover:text-text'}`}>
+              {f.label} <span className="opacity-70">{counts[f.id]}</span>
+            </button>
+          ))}
+        </div>
+        <div className="relative flex-1 min-w-56">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+          <input value={query} onChange={(e) => { setQuery(e.target.value); reset() }}
+            placeholder="Аудитория, группа, преподаватель…"
+            className="w-full pl-9 pr-3 py-2 rounded-xl bg-surface border border-border text-sm outline-none focus:border-accent transition" />
+        </div>
       </div>
 
-      {(semester.loading || rooms.loading) && <Loading />}
-      {semester.error && <ErrorBox message={semester.error} onRetry={semester.reload} />}
-      {rooms.error && <ErrorBox message={rooms.error} onRetry={rooms.reload} />}
-      {!semester.loading && !semester.data && !semester.error && <Empty text="Семестр не найден" />}
-      {rooms.data?.detail && <Empty text={rooms.data.detail} />}
-      {!rooms.loading && rooms.data && !rooms.data.detail && filtered.length === 0 && (
-        <Empty text="Свободных кабинетов нет" />
-      )}
+      {(pairTimes.loading || data.loading) && <Loading />}
+      {pairTimes.error && <ErrorBox message={pairTimes.error} onRetry={pairTimes.reload} />}
+      {data.error && <ErrorBox message={data.error} onRetry={data.reload} />}
+      {!data.loading && !data.error && filtered.length === 0 && <Empty text="Ничего не найдено" />}
 
-      {!rooms.loading && (
+      {!data.loading && (
         <div className="grid sm:grid-cols-2 gap-2">
-          {filtered.map((r) => (
-            <div key={r.id} className="p-4 rounded-xl border border-border bg-surface">
-              <div className="flex items-center justify-between">
-                <p className="font-semibold text-sm">{r.name}</p>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  Свободен
+          {filtered.slice(0, limit).map((r) => (
+            <div key={r.id} className={`p-4 rounded-xl border bg-surface ${r.busy ? 'border-red-300/60 dark:border-red-800/60' : 'border-border'}`}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold text-sm truncate" title={r.name}>{r.name}</p>
+                <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full ${r.busy
+                  ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                  : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
+                  {r.busy ? 'Занят' : 'Свободен'}
                 </span>
               </div>
-              <p className="text-xs text-muted mt-1">
-                {r.building_name ?? '—'}
-                {r.location_name ? ` · ${r.location_name}` : ''} · до {r.capacity} чел.
-              </p>
+              <p className="text-xs text-muted mt-1">{r.location || '—'}</p>
+              {r.lessons.map((l, i) => (
+                <div key={i} className="mt-2 pt-2 border-t border-border text-xs space-y-1">
+                  <p className="font-medium text-text">{l.subject}{l.type ? <span className="text-muted font-normal"> · {l.type}</span> : null}</p>
+                  {l.groups.length > 0 && <p className="flex gap-1.5 text-muted"><Users size={12} className="mt-0.5 shrink-0" /><span>{l.groups.join(', ')}</span></p>}
+                  {l.teachers.length > 0 && <p className="flex gap-1.5 text-muted"><UserRound size={12} className="mt-0.5 shrink-0" /><span>{l.teachers.join(', ')}</span></p>}
+                </div>
+              ))}
             </div>
           ))}
         </div>
+      )}
+      {!data.loading && filtered.length > limit && (
+        <button onClick={() => setLimit((n) => n + PAGE)} className="mt-4 w-full h-10 rounded-xl border border-border bg-surface text-sm hover:border-accent hover:text-accent transition">
+          Показать ещё ({filtered.length - limit})
+        </button>
       )}
     </div>
   )

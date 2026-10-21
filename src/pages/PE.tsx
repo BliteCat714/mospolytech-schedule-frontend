@@ -3,27 +3,28 @@ import { Check, X } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { api, errText } from '../lib/api'
 import type { PEDirection, PEEnrollment, PESlot } from '../lib/types'
-import { DAY_NAMES, hhmm, slotNumber } from '../lib/schedule'
+import { clientId, DAY_NAMES, hhmm, pairNumber } from '../lib/schedule'
 import { useAsync } from '../lib/useAsync'
 import { Empty, ErrorBox, Loading } from '../components/Status'
 
 export default function PE() {
   const { user } = useApp()
-  const studentId = user?.role === 'student' ? user.studentId : undefined
+  const { pairTimes } = useApp()
+  const group = user?.role === 'student' ? user.group : undefined
+  const owner = clientId()
   const [selectedDir, setSelectedDir] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const directions = useAsync((signal) => api.list<PEDirection>('pe/directions/', undefined, signal), [])
+  const directions = useAsync((signal) => api.list<PEDirection>('schedule/pe/directions/', undefined, signal), [])
   const slots = useAsync(
     async (signal) =>
-      selectedDir === null ? [] : api.list<PESlot>('pe/slots/', { direction: selectedDir }, signal),
+      selectedDir === null ? [] : api.list<PESlot>('schedule/pe/slots/', { direction: selectedDir }, signal),
     [selectedDir],
   )
   const mine = useAsync(
-    async (signal) =>
-      studentId === undefined ? [] : api.list<PEEnrollment>('pe/enrollments/', { student: studentId }, signal),
-    [studentId],
+    async (signal) => api.list<PEEnrollment>('schedule/pe/enrollments/', { owner }, signal),
+    [owner],
   )
 
   const enrollmentBySlot = useMemo(
@@ -42,13 +43,13 @@ export default function PE() {
   }, [slots.data])
 
   const toggle = async (slot: PESlot) => {
-    if (studentId === undefined || busy) return
+    if (!group || busy) return
     setError(null)
     setBusy(true)
     try {
       const existing = enrollmentBySlot.get(slot.id)
-      if (existing) await api.delete(`pe/enrollments/${existing.id}/`)
-      else await api.post('pe/enrollments/', { student: studentId, slot: slot.id })
+      if (existing) await api.delete(`schedule/pe/enrollments/${existing.id}/?owner=${owner}`)
+      else await api.post('schedule/pe/enrollments/', { owner, group_title: group, slot: slot.id })
       mine.reload()
     } catch (e) {
       setError(errText(e))
@@ -65,7 +66,6 @@ export default function PE() {
         Выберите направление и удобные пары (не более одной в день, без конфликтов с основным расписанием)
       </p>
 
-      {studentId === undefined && <p className="text-sm text-muted mb-4">Вы смотрите расписание группы. Персональная запись на физкультуру пока недоступна.</p>}
       {directions.loading && <Loading />}
       {directions.error && <ErrorBox message={directions.error} onRetry={directions.reload} />}
       {!directions.loading && !directions.error && (directions.data ?? []).length === 0 && (
@@ -109,12 +109,12 @@ export default function PE() {
                   {list.map((s) => {
                     const active = enrollmentBySlot.has(s.id)
                     const blocked = !active && busyDays.has(s.day_of_week)
-                    const n = slotNumber(hhmm(s.start_time))
+                    const n = pairNumber(hhmm(s.start_time), pairTimes.data ?? [])
                     return (
                       <button
                         key={s.id}
                         onClick={() => toggle(s)}
-                        disabled={studentId === undefined || blocked || busy}
+                        disabled={blocked || busy}
                         className={`text-left p-3 rounded-xl border transition ${
                           active
                             ? 'border-accent bg-gradient-to-br from-accent-soft to-transparent'
@@ -129,7 +129,7 @@ export default function PE() {
                               {n ? `${n} пара · ` : ''}
                               {hhmm(s.start_time)}–{hhmm(s.end_time)}
                             </p>
-                            <p className="text-xs text-muted truncate">{s.place}</p>
+                            <p className="text-xs text-muted">{s.place}</p>
                           </div>
                           <span
                             className={`shrink-0 p-1.5 rounded-lg ${

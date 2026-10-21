@@ -1,15 +1,5 @@
 import { format } from 'date-fns'
-import type { FixedPDSession, ImportedLesson, Lesson, LessonType, PEEnrollment, ScheduledClass } from './types'
-
-export const SLOT_TIMES: { n: number; start: string; end: string }[] = [
-  { n: 1, start: '09:00', end: '10:30' },
-  { n: 2, start: '10:40', end: '12:10' },
-  { n: 3, start: '12:20', end: '13:50' },
-  { n: 4, start: '14:30', end: '16:00' },
-  { n: 5, start: '16:10', end: '17:40' },
-  { n: 6, start: '17:50', end: '19:20' },
-  { n: 7, start: '19:30', end: '21:00' },
-]
+import type { Lesson, LessonType, PairTime, PDEnrollment, PEEnrollment, RaspLesson } from './types'
 
 export const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
@@ -22,91 +12,51 @@ export const LESSON_TYPE_LABELS: Record<LessonType, string> = {
   other: 'Занятие',
 }
 
-export function slotNumber(start: string): number | null {
-  const found = SLOT_TIMES.find((s) => s.start === start)
-  return found ? found.n : null
-}
-
-/** День недели в формате бэкенда: 0 = пн … 6 = вс. */
-export function weekdayIndex(date: Date): number {
-  return (date.getDay() + 6) % 7
+/** День недели в формате rasp: 1 = пн … 7 = вс. */
+export function weekdayNumber(date: Date): number {
+  return ((date.getDay() + 6) % 7) + 1
 }
 
 export const hhmm = (t: string | null | undefined): string => (t ?? '').slice(0, 5)
 
+export function pairNumber(start: string, times: PairTime[]): number | null {
+  return times.find((t) => t.start === start)?.pair ?? null
+}
+
 const TYPE_MAP: Record<string, LessonType> = {
-  LECTURE: 'lecture',
-  PRACTICE: 'practice',
-  LAB: 'lab',
-  PD: 'project',
-  PE: 'pe',
+  'Лекция': 'lecture',
+  'Практика': 'practice',
+  'Лаб. работа': 'lab',
 }
 
-export function classToLesson(c: ScheduledClass): Lesson {
-  const slot = SLOT_TIMES.find((s) => s.n === c.slot_lesson_number)
-  const start = hhmm(c.slot_start_time) || slot?.start || ''
-  const end = hhmm(c.slot_end_time) || slot?.end || ''
-  const room = c.room_name ? `${c.location_name ? `${c.location_name}, ` : ''}каб. ${c.room_name}` : c.format === 'ONLINE' ? 'Онлайн' : 'Место не указано'
+export function raspToLesson(l: RaspLesson): Lesson {
+  const isProject = l.location === 'ПД'
+  const room = l.rooms[0]
+  const place = l.rooms.length
+    ? l.rooms.map((r) => r.name).join(', ') + (l.location && !isProject ? ` · ${l.location}` : '')
+    : l.location || 'Место не указано'
+  const teachers = l.teachers.filter((t) => !t.is_vacancy).map((t) => t.name)
   return {
-    id: `c-${c.id}`,
-    title: c.subject_name,
-    type: TYPE_MAP[c.lesson_type] ?? 'other',
-    teacher: c.teacher_name ?? '—',
-    place: room,
-    group: c.group_name ?? undefined,
-    stream: c.stream_label?.startsWith('<') ? null : c.stream_label,
-    project: c.project_title,
-    format: c.format,
-    room: c.room_name,
-    location: c.location_name,
-    lessonNumber: c.slot_lesson_number,
-    source: 'Сформированное расписание',
-    dayOfWeek: c.slot_day,
-    start,
-    end,
+    id: `r-${l.id}`,
+    title: l.subject,
+    type: isProject ? 'project' : (TYPE_MAP[l.type] ?? 'other'),
+    teacher: teachers.join('\n') || '—',
+    place,
+    link: l.e_link ?? room?.url ?? null,
+    group: l.group,
+    location: l.location,
+    lessonNumber: l.pair,
+    dayOfWeek: l.weekday - 1,
+    start: hhmm(l.start),
+    end: hhmm(l.end),
+    dateFrom: l.date_from,
+    dateTo: l.date_to,
   }
 }
 
-export function importedToLesson(rule: ImportedLesson): Lesson {
-  const type = rule.lesson_type.toLowerCase()
-  return {
-    id: `imported-${rule.id}`,
-    title: rule.subject,
-    type: type.includes('лек') ? 'lecture' : type.includes('лаб') ? 'lab' : type.includes('пр') ? 'practice' : 'other',
-    teacher: rule.teacher_raw || '—',
-    place: rule.data.places?.map((p) => p.text).filter(Boolean).join(', ') || rule.data.rooms?.join(', ') || 'Место не указано',
-    group: rule.group_name,
-    lessonNumber: rule.lesson_number ?? slotNumber(hhmm(rule.start)),
-    source: 'Импортированное расписание',
-    dayOfWeek: rule.day_of_week - 1,
-    start: hhmm(rule.start),
-    end: hhmm(rule.end),
-    dateFrom: rule.date_from,
-    dateTo: rule.date_to,
-  }
-}
-
-export function fixedPDToLesson(session: FixedPDSession): Lesson {
-  return {
-    id: `pd-${session.session_id}`,
-    title: session.project_title,
-    type: 'project',
-    teacher: session.teacher_name || '—',
-    place: [session.location_name, session.room_name].filter(Boolean).join(', ') || 'Место не указано',
-    dayOfWeek: session.day_of_week,
-    start: hhmm(session.start),
-    end: hhmm(session.end),
-    occurrenceDates: session.occurrence_dates,
-    project: session.project_title,
-    room: session.room_name,
-    location: session.location_name,
-    lessonNumber: slotNumber(hhmm(session.start)),
-    source: 'Фиксированная проектная деятельность',
-  }
-}
-
-export function enrollmentToLesson(e: PEEnrollment): Lesson {
+export function enrollmentToLesson(e: PEEnrollment, times: PairTime[]): Lesson {
   const s = e.slot_detail
+  const start = hhmm(s.start_time)
   return {
     id: `pe-${e.id}`,
     title: 'Физическая культура',
@@ -114,20 +64,36 @@ export function enrollmentToLesson(e: PEEnrollment): Lesson {
     teacher: 'Кафедра физвоспитания',
     place: s.place,
     dayOfWeek: s.day_of_week,
-    start: hhmm(s.start_time),
+    start,
     end: hhmm(s.end_time),
-    lessonNumber: slotNumber(hhmm(s.start_time)),
-    source: 'Запись на физкультуру',
+    lessonNumber: pairNumber(start, times),
   }
 }
 
+export function pdEnrollmentToLessons(e: PDEnrollment): Lesson[] {
+  const p = e.project
+  return p.slots.map((slot, i) => ({
+    id: `pd-${e.id}-${i}`,
+    title: p.title,
+    type: 'project' as const,
+    teacher: p.teacher || '—',
+    place: slot.room || 'Место не указано',
+    project: p.title,
+    group: undefined,
+    dayOfWeek: slot.day_of_week,
+    start: slot.start,
+    end: slot.end,
+    lessonNumber: slot.pair,
+  }))
+}
+
+/** Занятия выбранного дня: совпадает день недели и дата попадает в период действия. */
 export function lessonsForDay(all: Lesson[], date: Date): Lesson[] {
-  const day = weekdayIndex(date)
+  const day = weekdayNumber(date) - 1
   const key = format(date, 'yyyy-MM-dd')
   return all.filter((l) => l.dayOfWeek === day
     && (!l.dateFrom || key >= l.dateFrom)
-    && (!l.dateTo || key <= l.dateTo)
-    && (!l.occurrenceDates || l.occurrenceDates.includes(key)))
+    && (!l.dateTo || key <= l.dateTo))
 }
 
 export function typeColor(type: string): string {
@@ -138,5 +104,19 @@ export function typeColor(type: string): string {
     case 'project': return 'bg-project'
     case 'pe': return 'bg-pe'
     default: return 'bg-muted'
+  }
+}
+
+/** Идентификатор браузера: входа в системе нет, по нему хранятся записи на физкультуру. */
+export function clientId(): string {
+  try {
+    let id = localStorage.getItem('clientId')
+    if (!id) {
+      id = crypto.randomUUID()
+      localStorage.setItem('clientId', id)
+    }
+    return id
+  } catch {
+    return 'anonymous-session'
   }
 }

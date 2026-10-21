@@ -1,88 +1,60 @@
-export interface Semester {
-  id: number
-  name: string
-  start_date: string
-  weeks_count: number
-}
-
-export interface Group {
-  id: number
-  name: string
-}
-
-export interface Student {
-  id: number
-  group: number
-  group_name: string
-  full_name: string
-}
-
-export interface Teacher {
-  id: number
-  full_name: string
-}
-
-export interface ScheduledClass {
-  id: number
-  subject_name: string
-  lesson_type: string
-  teacher_name: string | null
-  slot_day: number // 0 = пн … 5 = сб
-  slot_lesson_number: number
-  slot_start_time: string | null
-  slot_end_time: string | null
-  room_name: string | null
-  location_name: string
-  format: string
-  group_name?: string | null
-  stream_label?: string | null
-  project_title?: string | null
-}
-
-export interface FixedPDSession {
-  session_id: number
-  project_title: string
-  day_of_week: number
+export interface PairTime {
+  pair: number
   start: string
   end: string
-  occurrence_dates: string[]
-  teacher_name: string | null
-  room_name: string | null
-  location_name: string
 }
 
-export interface ScheduleResponse {
-  scheduled_classes: ScheduledClass[]
-  fixed_pd_snapshot: FixedPDSession[]
-}
-
-export interface Page<T> {
-  results: T[]
-  next: string | null
-}
-
-export interface ImportedLesson {
+export interface RaspGroup {
   id: number
-  group_name: string
+  title: string
+  course: number | null
+}
+
+export interface RaspTeacher {
+  id: number
+  name: string
+  is_vacancy: boolean
+}
+
+export interface RaspLesson {
+  id: number
   subject: string
-  lesson_type: string
-  day_of_week: number
-  lesson_number?: number
+  type: string
+  weekday: number // 1 = пн … 7 = вс
+  pair: number
   start: string | null
   end: string | null
   date_from: string | null
   date_to: string | null
-  week_raw: string
-  teacher_raw: string
-  data: { rooms?: string[]; places?: { text: string }[] }
+  location: string
+  e_link: string | null
+  group?: string
+  teachers: RaspTeacher[]
+  rooms: { name: string; location: string; url: string | null }[]
 }
 
-export interface ImportedScheduleResponse extends Page<ImportedLesson> {
-  schedule_import: {
-    id: number
-    source_metadata: { date?: string }
-    review_required: boolean
-  } | null
+export interface LessonsResponse {
+  lessons: RaspLesson[]
+}
+
+export interface RoomOccupancy {
+  subject: string
+  type: string
+  teachers: string[]
+  groups: string[]
+}
+
+export interface RoomStatus {
+  id: number
+  name: string
+  location: string
+  busy: boolean
+  lessons: RoomOccupancy[]
+}
+
+export interface RoomsStatusResponse {
+  locations: string[]
+  rooms: RoomStatus[]
 }
 
 export interface PEDirection {
@@ -103,23 +75,40 @@ export interface PESlot {
 
 export interface PEEnrollment {
   id: number
-  student: number
+  owner: string
   slot: number
   slot_detail: PESlot
 }
 
-export interface Room {
-  id: number
-  name: string
-  building_name: string | null
-  location_name: string
-  capacity: number
+export interface PDSlot {
+  day_of_week: number
+  start: string
+  end: string
+  pair: number | null
+  room: string
 }
 
-export interface FreeRoomsResponse {
-  slot: { day_of_week: number; lesson_number: number } | null
-  rooms: Room[]
-  detail?: string
+export interface PDProject {
+  id: number
+  number: number
+  direction: string
+  title: string
+  teacher: string
+  contact: string
+  note: string
+  slots: PDSlot[]
+}
+
+export interface PDDirection {
+  name: string
+  count: number
+}
+
+export interface PDEnrollment {
+  id: number
+  owner: string
+  group_title: string
+  project: PDProject
 }
 
 export type LessonType = 'lecture' | 'practice' | 'lab' | 'project' | 'pe' | 'other'
@@ -136,14 +125,13 @@ export interface Lesson {
   group?: string
   dateFrom?: string | null
   dateTo?: string | null
-  occurrenceDates?: string[]
+  link?: string | null
   lessonNumber?: number | null
   format?: string
   room?: string | null
   location?: string
   stream?: string | null
   project?: string | null
-  source?: string
 }
 
 export type ScheduleTarget =
@@ -151,5 +139,5 @@ export type ScheduleTarget =
   | { kind: 'teacher'; id: number; name: string }
 
 export type User =
-  | { role: 'student'; id: number; name: string; group: string; studentId?: number }
+  | { role: 'student'; id: number; name: string; group: string }
   | { role: 'teacher'; id: number; name: string }

@@ -1,5 +1,5 @@
 import { api } from './api'
-import type { Group, ScheduleTarget, Teacher, User } from './types'
+import type { RaspGroup, RaspTeacher, ScheduleTarget, User } from './types'
 import { useAsync } from './useAsync'
 
 export const targetKey = (target: ScheduleTarget) => `${target.kind}:${target.id}`
@@ -14,12 +14,12 @@ export const matchesSearch = (text: string, query: string) => {
 export function useDirectory() {
   return useAsync(async (signal): Promise<ScheduleTarget[]> => {
     const [groups, teachers] = await Promise.all([
-      api.list<Group>('groups/', undefined, signal),
-      api.list<Teacher>('imported/teachers/', undefined, signal),
+      api.get<RaspGroup[]>('rasp/groups/', { with_lessons: 1 }, signal),
+      api.get<RaspTeacher[]>('rasp/teachers/', undefined, signal),
     ])
     return [
-      ...groups.map((g): ScheduleTarget => ({ kind: 'group', id: g.id, name: g.name })),
-      ...teachers.map((t): ScheduleTarget => ({ kind: 'teacher', id: t.id, name: t.full_name })),
+      ...groups.map((g): ScheduleTarget => ({ kind: 'group', id: g.id, name: g.title })),
+      ...teachers.map((t): ScheduleTarget => ({ kind: 'teacher', id: t.id, name: t.name })),
     ]
   }, [])
 }

@@ -1,7 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Calendar, Dumbbell, DoorOpen, LogOut, Moon, Sun, User } from 'lucide-react'
+import { Briefcase, Calendar, Dumbbell, DoorOpen, LogOut, Moon, Sun, User } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { isMockMode } from '../lib/dataSource'
 import Favorites from './Favorites'
 import { profileTarget } from '../lib/directory'
 
@@ -26,7 +25,10 @@ export default function Layout() {
         <nav aria-label="Основная навигация" className="flex-1 min-h-0 overflow-y-auto space-y-1">
         {[
           { to: '/', icon: Calendar, label: 'Расписание' },
-          ...(user?.role === 'student' ? [{ to: '/pe', icon: Dumbbell, label: 'Физкультура' }] : []),
+          ...(user?.role === 'student' ? [
+            { to: '/pd', icon: Briefcase, label: 'Проектная деятельность' },
+            { to: '/pe', icon: Dumbbell, label: 'Физкультура' },
+          ] : []),
           { to: '/rooms', icon: DoorOpen, label: 'Кабинеты' },
         ].map(({ to, icon: Icon, label }) => (
           <NavLink
@@ -85,7 +87,6 @@ export default function Layout() {
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         <header className="min-h-14 shrink-0 border-b border-border bg-surface/60 backdrop-blur-md flex items-center justify-end px-3 lg:px-6 gap-3 z-30">
-          {isMockMode && <span className="mr-auto text-xs text-accent">Тестовый режим · локальные данные</span>}
           <button
             onClick={toggleTheme}
             className="shrink-0 p-2 rounded-xl border border-border bg-surface hover:bg-surface-2 text-muted transition"

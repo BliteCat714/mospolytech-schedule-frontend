@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Login from './pages/Login'
 import Schedule from './pages/Schedule'
 import PE from './pages/PE'
+import ProjectActivity from './pages/ProjectActivity'
 import Rooms from './pages/Rooms'
 import { targetKey } from './lib/directory'
 
@@ -32,6 +33,7 @@ function AppRoutes() {
         }
       >
         <Route path="/" element={<Schedule key={viewedSchedule ? targetKey(viewedSchedule) : 'none'} />} />
+        <Route path="/pd" element={<StudentOnly><ProjectActivity /></StudentOnly>} />
         <Route path="/pe" element={<StudentOnly><PE /></StudentOnly>} />
         <Route path="/rooms" element={<Rooms />} />
       </Route>

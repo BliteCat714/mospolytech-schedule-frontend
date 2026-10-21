@@ -9,7 +9,6 @@ import { LESSON_TYPE_LABELS, typeColor } from '../lib/schedule'
 interface Props {
   lesson: Lesson
   date: Date
-  semester?: string
   userGroup?: string
   onClose: () => void
 }
@@ -17,7 +16,7 @@ interface Props {
 const formats: Record<string, string> = { ONLINE: 'Онлайн', ONSITE: 'Очно', HYBRID: 'Смешанный' }
 const displayDate = (date: string) => format(parseISO(date), 'd MMMM yyyy', { locale: ru })
 
-export default function LessonDetails({ lesson, date, semester, userGroup, onClose }: Props) {
+export default function LessonDetails({ lesson, date, userGroup, onClose }: Props) {
   const titleId = useId()
   const closeButton = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLElement>(null)
@@ -86,16 +85,11 @@ export default function LessonDetails({ lesson, date, semester, userGroup, onClo
           </div>}
           {lesson.stream && <div><dt className="text-xs text-muted mb-1">Поток</dt><dd className="break-words">{lesson.stream}</dd></div>}
           {lesson.project && <div><dt className="text-xs text-muted mb-1">Проект</dt><dd>{lesson.project}</dd></div>}
-          {semester && <div><dt className="text-xs text-muted mb-1">Семестр</dt><dd>{semester}</dd></div>}
+          {lesson.link && <div><dt className="text-xs text-muted mb-1">Ссылка</dt><dd><a href={lesson.link} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline break-all">{lesson.link}</a></dd></div>}
           {(lesson.dateFrom || lesson.dateTo) && <div>
             <dt className="text-xs text-muted mb-1">Период проведения</dt>
             <dd>{lesson.dateFrom ? displayDate(lesson.dateFrom) : 'Начало не указано'} — {lesson.dateTo ? displayDate(lesson.dateTo) : 'Конец не указан'}</dd>
           </div>}
-          {!!lesson.occurrenceDates?.length && <div>
-            <dt className="text-xs text-muted mb-1">Даты занятий</dt>
-            <dd className="space-y-1">{lesson.occurrenceDates.map((d) => <div key={d}>{displayDate(d)}</div>)}</dd>
-          </div>}
-          {lesson.source && <div className="pt-4 border-t border-border"><dt className="text-xs text-muted mb-1">Источник</dt><dd>{lesson.source}</dd></div>}
         </dl>
       </div>
     </aside>, document.body,

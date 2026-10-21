@@ -1,87 +1,65 @@
 import { Fragment, useMemo, useState, type CSSProperties } from 'react'
-import { format, addDays, startOfWeek, parseISO } from 'date-fns'
+import { format, addDays, startOfWeek } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, CalendarDays, Star, ArrowLeft } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { profileTarget, targetKey } from '../lib/directory'
 import { api, errText } from '../lib/api'
-import type { ImportedScheduleResponse, Lesson, ScheduleResponse } from '../lib/types'
-import { classToLesson, fixedPDToLesson, importedToLesson, lessonsForDay, SLOT_TIMES } from '../lib/schedule'
+import type { Lesson, LessonsResponse, PDEnrollment, PEEnrollment } from '../lib/types'
+import { clientId, enrollmentToLesson, lessonsForDay, pdEnrollmentToLessons, raspToLesson } from '../lib/schedule'
 import { useAsync } from '../lib/useAsync'
 import LessonCard from '../components/LessonCard'
 import LessonDetails from '../components/LessonDetails'
 import WeekPicker from '../components/WeekPicker'
 import { Empty, ErrorBox, Loading } from '../components/Status'
 
-type ScheduleData = { lessons: Lesson[]; imported?: boolean; sourceDate?: string; firstDate?: string; skipped?: number }
-
 export default function Schedule() {
-    const { user, semester, viewedSchedule, favorites, toggleFavorite, viewSchedule } = useApp()
+    const { user, pairTimes, viewedSchedule, favorites, toggleFavorite, viewSchedule } = useApp()
     const target = viewedSchedule
     const isOwn = !!user && !!target && targetKey(profileTarget(user)) === targetKey(target)
     const isFavorite = !!target && favorites.some((f) => targetKey(f) === targetKey(target))
     const [current, setCurrent] = useState(new Date())
     const [pickerOpen, setPickerOpen] = useState(false)
     const [actionError, setActionError] = useState<string | null>(null)
+    const [session, setSession] = useState(false)
     const [selection, setSelection] = useState<{ id: string; date: Date } | null>(null)
 
     const weekStart = startOfWeek(current, { weekStartsOn: 1 })
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
     const todayIndex = days.findIndex((d) => d.toDateString() === new Date().toDateString())
 
-    const semesterId = semester.data?.id
-    const imported = target?.kind === 'teacher'
-    const data = useAsync<ScheduleData>(
+    const times = useMemo(() => pairTimes.data ?? [], [pairTimes.data])
+    const data = useAsync<Lesson[]>(
         async (signal) => {
-            if (!target) return { lessons: [] }
-            if (imported) {
-                const path = `imported/teachers/${target.id}/schedule/`
-                const first = await api.get<ImportedScheduleResponse>(path, { page_size: 1000 }, signal)
-                const rules = [...first.results]
-                let next = first.next
-                let page = 2
-                while (next) {
-                    const result = await api.get<ImportedScheduleResponse>(path, {
-                        page: page++, page_size: 1000, import_id: first.schedule_import?.id,
-                    }, signal)
-                    rules.push(...result.results)
-                    next = result.next
-                }
-                // Номер/чётность недели пока не интерпретируются парсером.
-                const usable = rules.filter((r) => !r.week_raw?.trim() && r.start && r.end && r.date_from && r.date_to)
-                return {
-                    lessons: usable.map(importedToLesson), imported: true,
-                    sourceDate: first.schedule_import?.source_metadata.date,
-                    firstDate: usable.map((r) => r.date_from!).sort()[0],
-                    skipped: rules.length - usable.length,
-                }
+            if (!target) return []
+            const path = target.kind === 'group'
+                ? `rasp/groups/${encodeURIComponent(target.name)}/lessons/`
+                : `rasp/teachers/${target.id}/lessons/`
+            const response = await api.get<LessonsResponse>(path, { session: session ? 1 : 0 }, signal)
+            let lessons = (response?.lessons ?? []).map(raspToLesson)
+            if (isOwn && user?.role === 'student' && !session) {
+                const pe = await api.list<PEEnrollment>('schedule/pe/enrollments/', { owner: clientId() }, signal)
+                const pd = await api.get<PDEnrollment[]>('rasp/pd/enrollments/', { owner: clientId() }, signal)
+                // Заглушка «Проектная деятельность» (место ПД) заменяется выбранным проектом.
+                if (pd.length) lessons = lessons.filter((l) => l.location !== 'ПД')
+                lessons.push(...pe.map((e) => enrollmentToLesson(e, times)), ...pd.flatMap(pdEnrollmentToLessons))
             }
-            if (semesterId === undefined) return { lessons: [] }
-            const response = await api.get<ScheduleResponse>(
-                `schedule/groups/${target.id}/`,
-                { semester: semesterId },
-                signal,
-            )
-            const lessons = [
-                ...response.scheduled_classes.map(classToLesson),
-                ...response.fixed_pd_snapshot.map(fixedPDToLesson),
-            ]
-            return { lessons }
+            return lessons
         },
-        [target?.id, target?.kind, imported, semesterId],
+        [target?.id, target?.kind, target?.name, session, isOwn, times],
     )
 
-    const allLessons = useMemo(() => data.data?.lessons ?? [], [data.data])
+    const allLessons = useMemo(() => data.data ?? [], [data.data])
     const selectedLesson = selection ? allLessons.find((lesson) => lesson.id === selection.id) : undefined
     const slots = useMemo(() => {
-        const times = new Map(SLOT_TIMES.map((s) => [s.start, { ...s, n: s.n as number | null }]))
+        const rows = new Map(times.map((t) => [t.start, { n: t.pair as number | null, start: t.start, end: t.end }]))
         for (const lesson of allLessons) {
-            if (lesson.start && !times.has(lesson.start)) {
-                times.set(lesson.start, { n: null, start: lesson.start, end: lesson.end })
+            if (lesson.start && !rows.has(lesson.start)) {
+                rows.set(lesson.start, { n: null, start: lesson.start, end: lesson.end })
             }
         }
-        return [...times.values()].sort((a, b) => a.start.localeCompare(b.start))
-    }, [allLessons])
+        return [...rows.values()].sort((a, b) => a.start.localeCompare(b.start))
+    }, [allLessons, times])
     const filterDay = (date: Date) => lessonsForDay(allLessons, date)
 
     const handleSelectDate = (d: Date) => {
@@ -92,7 +70,7 @@ export default function Schedule() {
     const removePE = async (lesson: Lesson) => {
         setActionError(null)
         try {
-            await api.delete(`pe/enrollments/${lesson.id.replace(/^pe-/, '')}/`)
+            await api.delete(`schedule/pe/enrollments/${lesson.id.replace(/^pe-/, '')}/?owner=${clientId()}`)
             data.reload()
         } catch (e) {
             setActionError(errText(e))
@@ -119,6 +97,10 @@ export default function Schedule() {
                         className="h-10 px-3 flex items-center gap-2 rounded-xl border border-border bg-surface text-sm text-accent hover:bg-accent-soft transition">
                         <Star size={16} fill={isFavorite ? 'currentColor' : 'none'} />{isFavorite ? 'В избранном' : 'Добавить в избранное'}
                     </button>}
+                    <button onClick={() => setSession((v) => !v)} aria-pressed={session}
+                        className={`h-10 px-3 rounded-xl border text-sm transition ${session ? 'border-accent text-accent bg-accent-soft' : 'border-border bg-surface text-muted hover:text-text'}`}>
+                        Сессия
+                    </button>
                     <div className="relative">
                         <button
                             onClick={() => setPickerOpen((v) => !v)}
@@ -159,23 +141,12 @@ export default function Schedule() {
                 </div>
             </div>
 
-            {((!imported && semester.loading) || data.loading) && <Loading />}
-            {!imported && semester.error && <ErrorBox message={semester.error} onRetry={semester.reload} />}
+            {(pairTimes.loading || data.loading) && <Loading />}
+            {pairTimes.error && <ErrorBox message={pairTimes.error} onRetry={pairTimes.reload} />}
             {data.error && <ErrorBox message={data.error} onRetry={data.reload} />}
             {actionError && <ErrorBox message={actionError} />}
-            {!imported && !semester.loading && !semester.error && !semester.data && (
-                <Empty text="Семестр ещё не создан" />
-            )}
-            {!data.loading && !data.error && (imported || semester.data) && allLessons.length === 0 && (
-                <Empty text="Расписание пока не сформировано" />
-            )}
-
-            {!data.loading && !data.error && data.data?.imported && (
-                <div className="mb-2 p-2 rounded-xl border border-border bg-surface text-xs shrink-0">
-                    <p>Источник: rasp.dmami.ru{data.data.sourceDate ? ` · обновление ${data.data.sourceDate}` : ''}. Импорт требует проверки.</p>
-                    {data.data.firstDate && <button className="text-accent mt-1" onClick={() => handleSelectDate(parseISO(data.data!.firstDate!))}>Открыть начало периода расписания</button>}
-                    {!!data.data.skipped && <p className="text-muted mt-1">Не показано записей: {data.data.skipped}. Не определены даты, время или правило недели.</p>}
-                </div>
+            {!data.loading && !data.error && allLessons.length === 0 && (
+                <Empty text={session ? 'Сессионного расписания нет' : 'Расписание пока не загружено'} />
             )}
 
             {!data.loading && allLessons.length > 0 && (
@@ -208,7 +179,7 @@ export default function Schedule() {
                                     <span className="schedule-axis-time">{slot.start}<br />–<br />{slot.end}</span>
                                 </div>
                                 {days.map((d) => {
-                                    const cell = filterDay(d).filter((l) => l.start === slot.start)
+                                    const cell = filterDay(d).filter((l) => (l.lessonNumber ? l.lessonNumber === slot.n : l.start === slot.start))
                                     return (
                                         <div key={format(d, 'yyyy-MM-dd')}
                                             className={`schedule-cell ${d.toDateString() === new Date().toDateString() ? 'schedule-cell-today' : ''}`}>
@@ -216,7 +187,7 @@ export default function Schedule() {
                                                 <LessonCard key={l.id} lesson={l}
                                                     selected={selection?.id === l.id && selection.date.toDateString() === d.toDateString()}
                                                     onOpen={() => { setPickerOpen(false); setSelection({ id: l.id, date: d }) }}
-                                                    onRemove={isOwn && user?.role === 'student' && user.studentId && l.type === 'pe' ? () => removePE(l) : undefined} />
+                                                    onRemove={isOwn && user?.role === 'student' && l.type === 'pe' ? () => removePE(l) : undefined} />
                                             ))}
                                         </div>
                                     )
@@ -227,7 +198,6 @@ export default function Schedule() {
                 </div>
             )}
             {selectedLesson && selection && <LessonDetails lesson={selectedLesson} date={selection.date}
-                semester={!imported ? semester.data?.name : undefined}
                 userGroup={isOwn && target?.kind === 'group' ? target.name : undefined}
                 onClose={() => setSelection(null)} />}
         </div>

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { api } from '../lib/api'
 import { userStorageKey } from '../lib/dataSource'
 import { profileTarget, targetKey } from '../lib/directory'
-import type { ScheduleTarget, Semester, User } from '../lib/types'
+import type { PairTime, ScheduleTarget, User } from '../lib/types'
 import { useAsync, type AsyncState } from '../lib/useAsync'
 
 interface AppContextType {
@@ -15,7 +15,7 @@ interface AppContextType {
   toggleFavorite: (target: ScheduleTarget) => void
   toggleTheme: () => void
   isDark: boolean
-  semester: AsyncState<Semester | null>
+  pairTimes: AsyncState<PairTime[]>
 }
 const AppContext = createContext<AppContextType | null>(null)
 const favoritesKey = `${userStorageKey}:favorites`
@@ -58,10 +58,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     document.documentElement.classList.toggle('dark', isDark)
     localStorage.setItem('theme', isDark ? 'dark' : 'light')
   }, [isDark])
-  const semester = useAsync<Semester | null>(async (signal) => {
-    const list = await api.list<Semester>('semesters/', undefined, signal)
-    return list.at(-1) ?? null
-  }, [])
+  const pairTimes = useAsync<PairTime[]>((signal) => api.get<PairTime[]>('rasp/pair-times/', undefined, signal), [])
   const viewSchedule = (target: ScheduleTarget) => { setViewedSchedule(target); save(viewedKey, target) }
   const login = (profile: User) => {
     setUser(profile); save(userStorageKey, profile); viewSchedule(profileTarget(profile))
@@ -78,7 +75,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }
   return <AppContext.Provider value={{ user, login, logout, viewedSchedule, viewSchedule, favorites, toggleFavorite,
-    toggleTheme: () => setIsDark((v) => !v), isDark, semester }}>{children}</AppContext.Provider>
+    toggleTheme: () => setIsDark((v) => !v), isDark, pairTimes }}>{children}</AppContext.Provider>
 }
 export function useApp() {
   const ctx = useContext(AppContext)

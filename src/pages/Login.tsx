@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, BookOpen, GraduationCap, Search } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { isMockMode } from '../lib/dataSource'
 import { matchesSearch, useDirectory } from '../lib/directory'
 import type { ScheduleTarget } from '../lib/types'
 import { Empty, ErrorBox, Loading } from '../components/Status'
@@ -48,7 +47,6 @@ export default function Login() {
             </button>)}
           </div>
         </>}
-        {isMockMode && <p className="text-xs text-muted mt-6">Тестовый режим · профиль сохраняется в этом браузере</p>}
       </div>
     </div>
   )
