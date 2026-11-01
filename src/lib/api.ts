@@ -32,6 +32,14 @@ function errorMessage(body: unknown, status: number): string {
   return text || `Ошибка сервера (${status})`
 }
 
+/** Превращает ошибку сети/таймаута в ApiError с читаемым сообщением. */
+function toApiError(e: unknown): ApiError {
+  if (e instanceof DOMException && e.name === 'AbortError') {
+    return new ApiError('Сервер не ответил вовремя. Попробуйте ещё раз.', 0)
+  }
+  return new ApiError('Нет связи с сервером. Проверьте подключение.', 0)
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -52,12 +60,8 @@ async function request<T>(
     if (!res.ok) throw new ApiError(errorMessage(body, res.status), res.status)
     return body as T
   } catch (e) {
-    if (e instanceof ApiError) throw e
-    if (opts.signal?.aborted) throw e
-    if (e instanceof DOMException && e.name === 'AbortError') {
-      throw new ApiError('Сервер не ответил вовремя. Попробуйте ещё раз.', 0)
-    }
-    throw new ApiError('Нет связи с сервером. Проверьте подключение.', 0)
+    if (e instanceof ApiError || opts.signal?.aborted) throw e
+    throw toApiError(e)
   } finally {
     clearTimeout(timer)
   }
@@ -87,4 +91,30 @@ export const api = {
 
 export function errText(e: unknown): string {
   return e instanceof Error ? e.message : 'Неизвестная ошибка'
+}
+
+/** Скачивает файл с API (например, календарь .ics) в загрузки браузера. */
+export async function downloadFile(path: string, query: Query, filename: string): Promise<void> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  try {
+    const res = await fetch(buildUrl(path, query), { signal: controller.signal })
+    if (!res.ok) {
+      const body: unknown = await res.json().catch(() => null)
+      throw new ApiError(errorMessage(body, res.status), res.status)
+    }
+    const url = URL.createObjectURL(await res.blob())
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.append(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    if (e instanceof ApiError) throw e
+    throw toApiError(e)
+  } finally {
+    clearTimeout(timer)
+  }
 }

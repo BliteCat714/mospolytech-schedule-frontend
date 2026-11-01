@@ -1,10 +1,10 @@
 import { Fragment, useMemo, useState, type CSSProperties } from 'react'
 import { format, addDays, startOfWeek } from 'date-fns'
 import { ru } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, CalendarDays, Star, ArrowLeft } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, CalendarPlus, Check, Loader2, Star, ArrowLeft } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { profileTarget, targetKey } from '../lib/directory'
-import { api, errText } from '../lib/api'
+import { api, downloadFile, errText } from '../lib/api'
 import type { Lesson, LessonsResponse, PDEnrollment, PEEnrollment } from '../lib/types'
 import { clientId, enrollmentToLesson, lessonsForDay, pdEnrollmentToLessons, raspToLesson } from '../lib/schedule'
 import { useAsync } from '../lib/useAsync'
@@ -23,6 +23,7 @@ export default function Schedule() {
     const [actionError, setActionError] = useState<string | null>(null)
     const [session, setSession] = useState(false)
     const [selection, setSelection] = useState<{ id: string; date: Date } | null>(null)
+    const [exportState, setExportState] = useState<'idle' | 'loading' | 'done'>('idle')
 
     const weekStart = startOfWeek(current, { weekStartsOn: 1 })
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
@@ -77,6 +78,27 @@ export default function Schedule() {
         }
     }
 
+    // Расписание файлом .ics: открывается в Google/Apple Calendar и любом другом.
+    const exportCalendar = async () => {
+        if (!target || exportState === 'loading') return
+        setActionError(null)
+        setExportState('loading')
+        try {
+            const path = target.kind === 'group'
+                ? `rasp/groups/${encodeURIComponent(target.name)}/calendar/`
+                : `rasp/teachers/${target.id}/calendar/`
+            // Своё расписание студента включает физкультуру и выбранный проект.
+            const owner = isOwn && user?.role === 'student' && !session ? clientId() : undefined
+            await downloadFile(path, { session: session ? 1 : 0, owner },
+                `schedule-${target.name.replace(/[^\p{L}\p{N}._-]+/gu, '-')}.ics`)
+            setExportState('done')
+            setTimeout(() => setExportState('idle'), 2500)
+        } catch (e) {
+            setActionError(errText(e))
+            setExportState('idle')
+        }
+    }
+
     return (
         <div className="schedule-page w-full h-full min-h-0 flex flex-col">
             {/* Header */}
@@ -97,6 +119,15 @@ export default function Schedule() {
                         className="h-10 px-3 flex items-center gap-2 rounded-xl border border-border bg-surface text-sm text-accent hover:bg-accent-soft transition">
                         <Star size={16} fill={isFavorite ? 'currentColor' : 'none'} />{isFavorite ? 'В избранном' : 'Добавить в избранное'}
                     </button>}
+                    <button onClick={exportCalendar}
+                        disabled={!target || exportState === 'loading'}
+                        title="Скачать расписание файлом .ics — его можно импортировать в Google Календарь, Apple Календарь и др."
+                        className="h-10 px-3 flex items-center gap-2 rounded-xl border border-border bg-surface text-sm hover:bg-accent-soft hover:text-accent transition disabled:opacity-50 disabled:pointer-events-none">
+                        {exportState === 'loading' ? <Loader2 size={16} className="animate-spin shrink-0" />
+                            : exportState === 'done' ? <Check size={16} className="text-accent shrink-0" />
+                                : <CalendarPlus size={16} className="text-muted shrink-0" />}
+                        {exportState === 'done' ? 'Готово' : 'В календарь'}
+                    </button>
                     <button onClick={() => setSession((v) => !v)} aria-pressed={session}
                         className={`h-10 px-3 rounded-xl border text-sm transition ${session ? 'border-accent text-accent bg-accent-soft' : 'border-border bg-surface text-muted hover:text-text'}`}>
                         Сессия
