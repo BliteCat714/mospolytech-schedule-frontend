@@ -6,6 +6,7 @@ import Schedule from './pages/Schedule'
 import PE from './pages/PE'
 import ProjectActivity from './pages/ProjectActivity'
 import Rooms from './pages/Rooms'
+import Generation from './pages/Generation'
 import { targetKey } from './lib/directory'
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -36,6 +37,7 @@ function AppRoutes() {
         <Route path="/pd" element={<StudentOnly><ProjectActivity /></StudentOnly>} />
         <Route path="/pe" element={<StudentOnly><PE /></StudentOnly>} />
         <Route path="/rooms" element={<Rooms />} />
+        <Route path="/generation" element={<Generation />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
