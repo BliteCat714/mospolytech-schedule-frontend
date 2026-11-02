@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
@@ -8,7 +8,9 @@ import { LESSON_TYPE_LABELS, typeColor } from '../lib/schedule'
 
 interface Props {
   lesson: Lesson
-  date: Date
+  date?: Date
+  weekdayLabel?: string
+  children?: ReactNode
   userGroup?: string
   onClose: () => void
 }
@@ -16,7 +18,7 @@ interface Props {
 const formats: Record<string, string> = { ONLINE: 'Онлайн', ONSITE: 'Очно', HYBRID: 'Смешанный' }
 const displayDate = (date: string) => format(parseISO(date), 'd MMMM yyyy', { locale: ru })
 
-export default function LessonDetails({ lesson, date, userGroup, onClose }: Props) {
+export default function LessonDetails({ lesson, date, weekdayLabel, children, userGroup, onClose }: Props) {
   const titleId = useId()
   const closeButton = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLElement>(null)
@@ -63,8 +65,8 @@ export default function LessonDetails({ lesson, date, userGroup, onClose }: Prop
         </div>
         <dl className="space-y-5 text-sm">
           <div>
-            <dt className="flex items-center gap-2 text-xs text-muted mb-1"><CalendarDays size={14} />Дата</dt>
-            <dd className="font-medium first-letter:uppercase">{format(date, 'EEEE, d MMMM yyyy', { locale: ru })}</dd>
+            <dt className="flex items-center gap-2 text-xs text-muted mb-1"><CalendarDays size={14} />{date ? 'Дата' : 'День недели'}</dt>
+            <dd className="font-medium first-letter:uppercase">{date ? format(date, 'EEEE, d MMMM yyyy', { locale: ru }) : weekdayLabel}</dd>
           </div>
           <div>
             <dt className="flex items-center gap-2 text-xs text-muted mb-1"><Clock size={14} />Время{lesson.lessonNumber ? ` · ${lesson.lessonNumber} пара` : ''}</dt>
@@ -90,6 +92,7 @@ export default function LessonDetails({ lesson, date, userGroup, onClose }: Prop
             <dt className="text-xs text-muted mb-1">Период проведения</dt>
             <dd>{lesson.dateFrom ? displayDate(lesson.dateFrom) : 'Начало не указано'} — {lesson.dateTo ? displayDate(lesson.dateTo) : 'Конец не указан'}</dd>
           </div>}
+          {children}
         </dl>
       </div>
     </aside>, document.body,
