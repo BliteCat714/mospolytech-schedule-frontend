@@ -7,6 +7,10 @@ import PE from './pages/PE'
 import ProjectActivity from './pages/ProjectActivity'
 import Rooms from './pages/Rooms'
 import Generation from './pages/Generation'
+import DPO from './pages/DPO'
+import Events from './pages/Events'
+import FreePeriods from './pages/FreePeriods'
+import { AdminAccessProvider } from './components/AdminAccess'
 import { targetKey } from './lib/directory'
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -38,6 +42,9 @@ function AppRoutes() {
         <Route path="/pe" element={<StudentOnly><PE /></StudentOnly>} />
         <Route path="/rooms" element={<Rooms />} />
         <Route path="/generation" element={<Generation />} />
+        <Route path="/dpo" element={<DPO />} />
+        <Route path="/events" element={<Events />} />
+        <Route path="/free-periods" element={<FreePeriods />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -46,8 +53,8 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AppProvider>
+    <AppProvider><AdminAccessProvider>
       <AppRoutes />
-    </AppProvider>
+    </AdminAccessProvider></AppProvider>
   )
 }

@@ -1,5 +1,17 @@
 const BASE_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api').replace(/\/$/, '')
 const TIMEOUT_MS = 15000
+let adminAuthorization: string | null = null
+
+export function setAdminCredentials(username: string, password: string): void {
+  const target = new URL(BASE_URL, window.location.origin)
+  if (target.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(target.hostname)) {
+    throw new Error('Для входа администратора требуется HTTPS.')
+  }
+  const bytes = new TextEncoder().encode(`${username}:${password}`)
+  adminAuthorization = `Basic ${btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(''))}`
+}
+export function clearAdminCredentials(): void { adminAuthorization = null }
+
 
 export class ApiError extends Error {
   status: number
@@ -58,7 +70,7 @@ async function request<T>(
   try {
     const res = await fetch(buildUrl(path, opts.query), {
       method,
-      headers: { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...opts.headers },
+      headers: { ...(adminAuthorization ? { Authorization: adminAuthorization } : {}), ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...opts.headers },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
       signal: controller.signal,
     })
@@ -79,6 +91,8 @@ export const api = {
     request<T>('GET', path, { query, signal }),
   post: <T>(path: string, body: unknown, options?: RequestOptions) =>
     request<T>('POST', path, { ...options, body }),
+  patch: <T>(path: string, body: unknown, options?: RequestOptions) =>
+    request<T>('PATCH', path, { ...options, body }),
   delete: (path: string) => request<void>('DELETE', path),
   /** Все элементы пагинированного списка DRF. */
   list: async <T>(path: string, query?: Query, signal?: AbortSignal): Promise<T[]> => {
