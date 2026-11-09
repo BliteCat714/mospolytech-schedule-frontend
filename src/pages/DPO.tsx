@@ -2,7 +2,9 @@ import { useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, GraduationCap, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { dpoApi as api, errText } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
-import { Empty, ErrorBox, Loading } from '../components/Status'
+import { ErrorBox, Loading } from '../components/Status'
+import DPOListeners from '../components/dpo/DPOListeners'
+import DPOSchedulePreview from '../components/dpo/DPOSchedulePreview'
 import { displayCalendarDate } from '../lib/calendarDate'
 import { dpoRunLabel } from '../lib/dpo'
 import type { DPOProgram, DPODiscipline, DPOMembership, DPOGroup, DPOStudent, DPORun, DPOPlanResult } from '../lib/dpo'
@@ -67,15 +69,13 @@ function DPOEditor({ catalog, existing, lastResult, onPlanned, onBusyChange }: {
       hours: item.total_hours ?? (item.total_pairs ?? 0) * 2, format: item.format })) : [{ key: 'new-discipline-1', subject: 0, teacher: 0, hours: (initialModule?.teaching_weeks ?? 1) * 2, format: 'ONLINE' }],
   }))
   const [step, setStep] = useState(lastResult ? 3 : 0)
-  const [activeGroup, setActiveGroup] = useState(form.groups[0].key)
-  const [query, setQuery] = useState('')
-  const [sourceGroup, setSourceGroup] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const busy = useRef(false)
   const nextId = useRef(2)
   const [savedId, setSavedId] = useState(existing?.id ?? 0)
   const [runId, setRunId] = useState(lastResult?.run_id ?? catalog.programRuns[existing?.id ?? 0]?.[0]?.id ?? 0)
+  const [previewStudentId, setPreviewStudentId] = useState(0)
   const [viewGroup, setViewGroup] = useState(existingGroups[0]?.id ?? 0)
   const runs = useAsync(signal => savedId ? api.get<DPORun[]>(`schedule/dpo-programs/${savedId}/runs/`, undefined, signal) : Promise.resolve([]), [savedId])
   const projection = useAsync(async signal => runId && viewGroup ? { runId, groupId: viewGroup,
@@ -84,10 +84,9 @@ function DPOEditor({ catalog, existing, lastResult, onPlanned, onBusyChange }: {
   const period = catalog.modules.find(module => module.id === form.module)
   const baseRun = dpoBaseRuns(catalog, form).find(run => run.id === existing?.base_run) ?? dpoBaseRuns(catalog, form)[0]
   const hasHistory = !!catalog.programRuns[existing?.id ?? 0]?.length
-  const group = form.groups.find(item => item.key === activeGroup) ?? form.groups[0]
   const students = catalog.students.filter(student => !catalog.groups.find(item => item.id === student.group)?.is_dpo)
-  const visible = students.filter(student => (!sourceGroup || student.group === sourceGroup)
-    && `${student.full_name} ${student.group_name}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  const previewStudents = students.filter(student => catalog.memberships.some(item => item.group === viewGroup && item.student === student.id))
+  const previewStudent = previewStudents.find(student => student.id === previewStudentId)
   const uniqueStudents = new Set(form.groups.flatMap(item => item.students)).size
   function update(patch: Partial<DPOForm>) { if (busy.current) return; setForm(old => ({ ...old, ...patch })); setError(null) }
   function move(target: number) {
@@ -110,6 +109,7 @@ function DPOEditor({ catalog, existing, lastResult, onPlanned, onBusyChange }: {
   }
   return <>
     <p className="rounded-xl border border-border bg-surface-2 p-3 text-xs text-muted">Расчёт выполняет генератор по данным локальной базы. Состав студентов и часть справочников в ней тестовые. Учитывается сохранённое основное расписание, а не опубликованная лента rasp.</p>
+    {!!runId && step !== 3 && <button type="button" className="generation-button" onClick={() => { setError(null); setStep(3) }}>Посмотреть расписание ДПО</button>}
     <ol className="grid grid-cols-2 sm:grid-cols-4 gap-2" aria-label="Этапы программы">{steps.map((label, index) => <li key={label}><button type="button" disabled={index > step || pending} aria-current={index === step ? 'step' : undefined} onClick={() => move(index)} className={`w-full flex items-center gap-2 rounded-xl border p-3 text-sm text-left ${index === step ? 'border-accent bg-accent-soft text-accent' : 'border-border text-muted'} disabled:opacity-50`}><span>{index + 1}.</span>{label}</button></li>)}</ol>
     {error && <ErrorBox message={error} />}
     <section className="card p-5 space-y-5" aria-label={steps[step]}>
@@ -122,13 +122,14 @@ function DPOEditor({ catalog, existing, lastResult, onPlanned, onBusyChange }: {
         <p className="text-xs text-muted">Генератор составляет повторяющуюся учебную неделю для выбранного модуля. Произвольный диапазон дат пока не поддерживается.</p>
         <p className="text-sm text-muted">{baseRun ? `Основная занятость: сохранённое расписание №${baseRun.id}. Его занятия останутся на своих местах.` : 'Основное расписание этого периода ещё не рассчитано. Сначала выполните расчёт в разделе «Генерация».'}</p>
       </>}
-      {step === 1 && <><div><h2 className="font-semibold text-lg">Кто будет учиться?</h2><p className="text-sm text-muted mt-1">Выберите существующих студентов. Их основные учебные группы сохранятся.</p></div>
-        <div className="flex flex-wrap gap-2">{form.groups.map(item => <button type="button" key={item.key} className="generation-button" aria-pressed={item.key === group.key} onClick={() => setActiveGroup(item.key)}>{item.name || 'Без названия'} · {item.students.length}</button>)}<button type="button" className="generation-button" onClick={() => { const key = `new-group-${nextId.current++}`; update({ groups: [...form.groups, { key, name: `Группа ${form.groups.length + 1}`, students: [] }] }); setActiveGroup(key) }}><Plus size={14} />Ещё группа ДПО</button></div>
-        <div className="flex items-end gap-2"><label className="text-sm flex-1">Название группы ДПО<input className="generation-input" value={group.name} maxLength={40} onChange={event => update({ groups: form.groups.map(item => item.key === group.key ? { ...item, name: event.target.value } : item) })} /></label>{form.groups.length > 1 && <button type="button" className="generation-button" disabled={hasHistory && !!saved.current.groupIds[group.key]} title="Группу с сохранённым расписанием нельзя удалить из программы" aria-label="Удалить группу ДПО" onClick={() => { update({ groups: form.groups.filter(item => item.key !== group.key) }); setActiveGroup(form.groups.find(item => item.key !== group.key)!.key) }}><Trash2 size={16} /></button>}</div>
-        <div className="grid sm:grid-cols-2 gap-3"><label className="text-sm">Поиск студента<input className="generation-input" type="search" placeholder="Имя или учебная группа" value={query} onChange={event => setQuery(event.target.value)} /></label><label className="text-sm">Основная учебная группа<select className="generation-input" value={sourceGroup} onChange={event => setSourceGroup(Number(event.target.value))}><option value={0}>Все группы</option>{catalog.groups.filter(item => !item.is_dpo).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
-        <div className="grid sm:grid-cols-2 gap-2 max-h-80 overflow-auto">{visible.map(student => <label key={student.id} className="flex items-center gap-3 rounded-xl border border-border p-3 cursor-pointer"><input type="checkbox" checked={group.students.includes(student.id)} onChange={event => update({ groups: form.groups.map(item => item.key === group.key ? { ...item, students: event.target.checked ? [...item.students, student.id] : item.students.filter(id => id !== student.id) } : item) })} /><span className="text-sm">{student.full_name}<span className="block text-xs text-muted">Основная группа: {student.group_name}</span></span></label>)}</div>
-        {!visible.length && <Empty text="Студенты не найдены. Измените поиск." />}<p className="text-sm text-muted">В этой группе: {group.students.length}. Во всей программе: {uniqueStudents}.</p>
-      </>}
+      {step === 1 && <DPOListeners groups={form.groups} students={students}
+        onChange={groups => update({ groups })}
+        canRemoveGroup={key => !hasHistory || !saved.current.groupIds[key]}
+        onAddGroup={() => {
+          const key = `new-group-${nextId.current++}`
+          update({ groups: [...form.groups, { key, name: `Группа ${form.groups.length + 1}`, students: [] }] })
+          return key
+        }} />}
       {step === 2 && <><div><h2 className="font-semibold text-lg">Что будут изучать?</h2><p className="text-sm text-muted mt-1">Объём каждой дисциплины задаётся на каждую группу. Одна пара — два академических часа.</p></div>
         {form.disciplines.map((item, index) => <div key={item.key} className="rounded-xl border border-border p-4 space-y-3"><div className="flex justify-between items-center"><h3 className="text-sm font-medium">Дисциплина {index + 1}</h3>{form.disciplines.length > 1 && <button type="button" className="generation-button" disabled={hasHistory && !!saved.current.disciplineIds[item.key]} title="Дисциплину с сохранённым расписанием нельзя удалить" aria-label={`Удалить дисциплину ${index + 1}`} onClick={() => update({ disciplines: form.disciplines.filter(entry => entry.key !== item.key) })}><Trash2 size={14} /></button>}</div>
           <label className="block text-sm">Дисциплина<select className="generation-input" value={item.subject} onChange={event => update({ disciplines: form.disciplines.map(entry => entry.key === item.key ? { ...entry, subject: Number(event.target.value) } : entry) })}><option value={0}>Выберите дисциплину</option>{catalog.subjects.map(subject => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
@@ -144,7 +145,9 @@ function DPOEditor({ catalog, existing, lastResult, onPlanned, onBusyChange }: {
         <p className="text-xs text-muted">Результат сохраняется отдельным запуском. Основные пары не перемещаются. Показана повторяющаяся учебная неделя, а не календарь отдельных дат. После изменения основного расписания нужен новый расчёт ДПО.</p>
         {lastResult && <p role="status" className="text-sm">Расчёт №{lastResult.run_id}: {dpoRunLabel(lastResult.status)} · размещено {lastResult.scheduled_count} из {lastResult.required_count} пар в неделю. Учтено фоновых пар: {lastResult.background_classes}, других программ ДПО: {lastResult.other_dpo_run_ids.length}.</p>}
         {!!savedId && <div className="space-y-3"><div className="flex flex-wrap items-end gap-3"><label className="text-sm flex-1">Сохранённый расчёт<select disabled={pending} className="generation-input" value={runId} onChange={event => setRunId(Number(event.target.value))}><option value={0}>Выберите расчёт</option>{runs.data?.map(run => <option key={run.id} value={run.id}>№{run.id} · {dpoRunLabel(run.status)} · {new Date(run.created_at).toLocaleString('ru-RU')}</option>)}</select></label><button type="button" className="generation-button" disabled={pending} onClick={runs.reload}>Проверить результат</button></div>
-          <label className="block text-sm">Группа ДПО<select disabled={pending} className="generation-input" value={viewGroup} onChange={event => setViewGroup(Number(event.target.value))}>{existingGroups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label className="block text-sm">Группа ДПО<select disabled={pending} className="generation-input" value={viewGroup} onChange={event => { setViewGroup(Number(event.target.value)); setPreviewStudentId(0) }}>{existingGroups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          {!!runId && !!baseRun && <label className="block text-sm">Посмотреть вместе с основными занятиями слушателя<select className="generation-input" disabled={pending} value={previewStudent?.id ?? 0} onChange={event => setPreviewStudentId(Number(event.target.value))}><option value={0}>Только расписание группы ДПО</option>{previewStudents.map(student => <option key={student.id} value={student.id}>{student.full_name} · {student.group_name}</option>)}</select></label>}
+          {previewStudent && baseRun && !!runId && <DPOSchedulePreview key={`${previewStudent.id}:${baseRun.id}:${runId}`} student={previewStudent} mainRunId={baseRun.id} dpoRunId={runId} />}
           {runs.error && <ErrorBox message={runs.error} onRetry={runs.reload} />}
           {projection.loading && <Loading />}{projection.error && <ErrorBox message={projection.error} onRetry={projection.reload} />}
           {schedule && <div className="space-y-3"><p className="text-sm font-medium">{dpoRunLabel(schedule.run?.status ?? '')} · пар в неделю для группы: {schedule.scheduled_classes.length}</p>{schedule.run?.message && !['SOLVED', 'PARTIAL'].includes(schedule.run.status) && <p className="text-xs text-muted">{schedule.run.message}</p>}{schedule.issues.map(issue => <p key={issue.id} className="text-sm text-amber-700 dark:text-amber-300">{issue.text}</p>)}

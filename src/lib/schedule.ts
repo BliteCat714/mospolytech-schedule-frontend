@@ -9,6 +9,7 @@ export const LESSON_TYPE_LABELS: Record<LessonType, string> = {
   lab: 'Лабораторная',
   project: 'Проектная деятельность',
   pe: 'Физкультура',
+  dpo: 'ДПО',
   other: 'Занятие',
 }
 
@@ -96,15 +97,12 @@ export function lessonsForDay(all: Lesson[], date: Date): Lesson[] {
     && (!l.dateTo || key <= l.dateTo))
 }
 
+const TYPE_COLORS: Record<string, string> = {
+  lecture: 'bg-lecture', practice: 'bg-practice', lab: 'bg-lab',
+  project: 'bg-project', pe: 'bg-pe', dpo: 'bg-accent',
+}
 export function typeColor(type: string): string {
-  switch (type) {
-    case 'lecture': return 'bg-lecture'
-    case 'practice': return 'bg-practice'
-    case 'lab': return 'bg-lab'
-    case 'project': return 'bg-project'
-    case 'pe': return 'bg-pe'
-    default: return 'bg-muted'
-  }
+  return TYPE_COLORS[type] ?? 'bg-muted'
 }
 
 /** Идентификатор браузера: входа в системе нет, по нему хранятся записи на физкультуру. */
