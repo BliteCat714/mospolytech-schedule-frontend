@@ -11,11 +11,14 @@ import { useAsync } from '../lib/useAsync'
 import LessonCard from '../components/LessonCard'
 import LessonDetails from '../components/LessonDetails'
 import WeekPicker from '../components/WeekPicker'
+import ScheduleChecker from '../components/ScheduleChecker'
+import { demoBaseline, demoLessons, demoTimes, isCheckerDemo } from '../lib/checkerDemo'
 import { Empty, ErrorBox, Loading } from '../components/Status'
 
 export default function Schedule() {
     const { user, pairTimes, viewedSchedule, favorites, toggleFavorite, viewSchedule } = useApp()
     const target = viewedSchedule
+    const demo = isCheckerDemo(target)
     const isOwn = !!user && !!target && targetKey(profileTarget(user)) === targetKey(target)
     const isFavorite = !!target && favorites.some((f) => targetKey(f) === targetKey(target))
     const [current, setCurrent] = useState(new Date())
@@ -29,10 +32,11 @@ export default function Schedule() {
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
     const todayIndex = days.findIndex((d) => d.toDateString() === new Date().toDateString())
 
-    const times = useMemo(() => pairTimes.data ?? [], [pairTimes.data])
+    const times = useMemo(() => demo ? demoTimes : pairTimes.data ?? [], [pairTimes.data, demo])
     const data = useAsync<Lesson[]>(
         async (signal) => {
             if (!target) return []
+            if (demo) return demoLessons
             const path = target.kind === 'group'
                 ? `rasp/groups/${encodeURIComponent(target.name)}/lessons/`
                 : `rasp/teachers/${target.id}/lessons/`
@@ -111,6 +115,7 @@ export default function Schedule() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={data.reload} disabled={data.loading} className="h-10 px-3 rounded-xl border border-border bg-surface text-sm hover:bg-accent-soft disabled:opacity-50">Обновить и проверить</button>
                     {!isOwn && user && <button onClick={() => viewSchedule(profileTarget(user))}
                         className="h-10 px-3 flex items-center gap-2 rounded-xl border border-border bg-surface text-sm hover:bg-accent-soft hover:text-accent transition">
                         <ArrowLeft size={16} />Моё расписание
@@ -120,7 +125,7 @@ export default function Schedule() {
                         <Star size={16} fill={isFavorite ? 'currentColor' : 'none'} />{isFavorite ? 'В избранном' : 'Добавить в избранное'}
                     </button>}
                     <button onClick={exportCalendar}
-                        disabled={!target || exportState === 'loading'}
+                        disabled={demo || !target || exportState === 'loading'}
                         title="Скачать расписание файлом .ics — его можно импортировать в Google Календарь, Apple Календарь и др."
                         className="h-10 px-3 flex items-center gap-2 rounded-xl border border-border bg-surface text-sm hover:bg-accent-soft hover:text-accent transition disabled:opacity-50 disabled:pointer-events-none">
                         {exportState === 'loading' ? <Loader2 size={16} className="animate-spin shrink-0" />
@@ -128,7 +133,7 @@ export default function Schedule() {
                                 : <CalendarPlus size={16} className="text-muted shrink-0" />}
                         {exportState === 'done' ? 'Готово' : 'В календарь'}
                     </button>
-                    <button onClick={() => setSession((v) => !v)} aria-pressed={session}
+                    <button disabled={demo} onClick={() => setSession((v) => !v)} aria-pressed={session}
                         className={`h-10 px-3 rounded-xl border text-sm transition ${session ? 'border-accent text-accent bg-accent-soft' : 'border-border bg-surface text-muted hover:text-text'}`}>
                         Сессия
                     </button>
@@ -172,10 +177,15 @@ export default function Schedule() {
                 </div>
             </div>
 
-            {(pairTimes.loading || data.loading) && <Loading />}
-            {pairTimes.error && <ErrorBox message={pairTimes.error} onRetry={pairTimes.reload} />}
+            {demo && <p className="shrink-0 mb-3 text-sm text-accent">Демонстрационное расписание: Пн — накладка, Вт — окно, Ср — одна пара, Чт — пять пар, Пт — переход корпуса. Занятия повторяются каждую неделю. Изменения вымышлены; записи в базе не создаются.</p>}
+            {((!demo && pairTimes.loading) || data.loading) && <Loading />}
+            {!demo && pairTimes.error && <ErrorBox message={pairTimes.error} onRetry={pairTimes.reload} />}
             {data.error && <ErrorBox message={data.error} onRetry={data.reload} />}
             {actionError && <ErrorBox message={actionError} />}
+            {!data.loading && !data.error && (demo || (!pairTimes.loading && !pairTimes.error)) && data.data && target && <ScheduleChecker
+                key={`${targetKey(target)}:${session}:${isOwn ? clientId() : 'public'}`}
+                storageKey={`${targetKey(target)}:${session}:${isOwn ? clientId() : 'public'}`}
+                lessons={allLessons} times={times} week={weekStart} demoBaseline={demo ? demoBaseline : undefined} />}
             {!data.loading && !data.error && allLessons.length === 0 && (
                 <Empty text={session ? 'Сессионного расписания нет' : 'Расписание пока не загружено'} />
             )}

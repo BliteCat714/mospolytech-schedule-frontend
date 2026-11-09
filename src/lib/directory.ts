@@ -1,6 +1,7 @@
 import { api } from './api'
 import type { RaspGroup, RaspTeacher, ScheduleTarget, User } from './types'
 import { useAsync } from './useAsync'
+import { demoTarget } from './checkerDemo'
 
 export const targetKey = (target: ScheduleTarget) => `${target.kind}:${target.id}`
 export const profileTarget = (user: User): ScheduleTarget => ({
@@ -18,6 +19,7 @@ export function useDirectory() {
       api.get<RaspTeacher[]>('rasp/teachers/', undefined, signal),
     ])
     return [
+      demoTarget,
       ...groups.map((g): ScheduleTarget => ({ kind: 'group', id: g.id, name: g.title })),
       ...teachers.map((t): ScheduleTarget => ({ kind: 'teacher', id: t.id, name: t.name })),
     ]

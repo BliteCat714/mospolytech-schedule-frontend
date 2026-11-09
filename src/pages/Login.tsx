@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext'
 import { matchesSearch, useDirectory } from '../lib/directory'
 import type { ScheduleTarget } from '../lib/types'
 import { Empty, ErrorBox, Loading } from '../components/Status'
+import { demoTarget } from '../lib/checkerDemo'
 
 export default function Login() {
   const { login } = useApp()
@@ -31,6 +32,9 @@ export default function Login() {
               <Icon size={26} className="text-accent" /><span className="font-semibold">{label}</span>
             </button>
           ))}
+          <button onClick={() => pick(demoTarget)} className="w-full p-4 rounded-2xl border border-border bg-surface text-left hover:bg-accent-soft">
+            <span className="font-semibold">Демо чеккера расписания</span><span className="block text-xs text-muted mt-1">Вымышленная группа со всеми предупреждениями</span>
+          </button>
         </div> : <>
           <div className="relative mb-4">
             <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
