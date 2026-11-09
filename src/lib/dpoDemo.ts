@@ -37,25 +37,42 @@ export const dpoDemoApi = {
     if (problem) throw new Error(problem)
     const lessons: DemoLesson[] = []
     const studentSlots = new Set<string>(), teacherSlots = new Set<string>(), groupSlots = new Set<string>()
+    const groupDayLoad = new Map<string, number>()
+    const start = +parseDate(program.start), end = +parseDate(program.end)
     let missing = 0
     for (const group of program.groups) for (const discipline of program.disciplines) {
-      let left = discipline.hours / 2
+      const count = discipline.hours / 2
       const teacher = demoTeachers.find(item => item.id === discipline.teacher)!
-      for (let date = parseDate(program.start); date <= parseDate(program.end) && left; date = new Date(+date + 86400000)) {
-        const day = date.getUTCDay()
+      const candidates: { iso: string; stamp: number; pair: number }[] = []
+      for (let stamp = start; stamp <= end; stamp += 86400000) {
+        const date = new Date(stamp), day = date.getUTCDay()
         if (day === 0) continue
         const iso = date.toISOString().slice(0, 10)
-        for (let pair = 1; pair <= 6 && left; pair++) {
-          const slot = (day - 1) * 8 + pair, key = `${iso}:${pair}`
-          if (teacher.busy.includes(slot) || teacherSlots.has(`${teacher.id}:${key}`) || groupSlots.has(`${group.id}:${key}`)) continue
-          if (group.students.some(id => demoStudents.find(student => student.id === id)!.busy.includes(slot) || studentSlots.has(`${id}:${key}`))) continue
-          lessons.push({ date: iso, pair, group: group.name, title: discipline.title, teacher: teacher.name })
-          teacherSlots.add(`${teacher.id}:${key}`); groupSlots.add(`${group.id}:${key}`)
-          group.students.forEach(id => studentSlots.add(`${id}:${key}`))
-          left--
+        for (let pair = 1; pair <= 6; pair++) {
+          const slot = (day - 1) * 8 + pair
+          if (teacher.busy.includes(slot) || group.students.some(id => demoStudents.find(student => student.id === id)!.busy.includes(slot))) continue
+          candidates.push({ iso, stamp, pair })
         }
       }
-      missing += left
+      for (let index = 0; index < count; index++) {
+        // Spread target dates across the full period. Prefer days with less DPO
+        // workload; the mock still has no proof of optimality or infeasibility.
+        const target = count === 1 ? (start + end) / 2 : start + (end - start) * index / (count - 1)
+        const available = candidates.filter(item => {
+          const key = `${item.iso}:${item.pair}`
+          return !teacherSlots.has(`${teacher.id}:${key}`) && !groupSlots.has(`${group.id}:${key}`)
+            && !group.students.some(id => studentSlots.has(`${id}:${key}`))
+        })
+        available.sort((a, b) => (groupDayLoad.get(`${group.id}:${a.iso}`) ?? 0) - (groupDayLoad.get(`${group.id}:${b.iso}`) ?? 0)
+          || Math.abs(a.stamp - target) - Math.abs(b.stamp - target) || a.stamp - b.stamp || a.pair - b.pair)
+        const chosen = available[0]
+        if (!chosen) { missing += count - index; break }
+        const key = `${chosen.iso}:${chosen.pair}`, dayKey = `${group.id}:${chosen.iso}`
+        lessons.push({ date: chosen.iso, pair: chosen.pair, group: group.name, title: discipline.title, teacher: teacher.name })
+        teacherSlots.add(`${teacher.id}:${key}`); groupSlots.add(`${group.id}:${key}`)
+        group.students.forEach(id => studentSlots.add(`${id}:${key}`))
+        groupDayLoad.set(dayKey, (groupDayLoad.get(dayKey) ?? 0) + 1)
+      }
     }
     return { lessons: lessons.sort((a, b) => a.date.localeCompare(b.date) || a.pair - b.pair), missing }
   },

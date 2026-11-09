@@ -39,3 +39,12 @@ test('wizard requires individual listeners and whole pairs before planning', () 
   input.groups[0].students = [1]; input.disciplines[0].hours = 3
   assert.ok(validateDemoProgram(input, 2))
 })
+test('a three-month program distributes nine pairs across the period instead of its first two days', async () => {
+  const input: DemoProgram = { name: 'Анализ данных', start: '2026-11-09', end: '2027-02-09', groups: [{ id: 1, name: 'ДПО 1', students: [1] }], disciplines: [{ id: 1, title: 'Анализ данных', teacher: 1, hours: 18 }] }
+  const result = await dpoDemoApi.plan(input)
+  assert.equal(result.missing, 0)
+  assert.equal(result.lessons.length, 9)
+  assert.equal(new Set(result.lessons.map(lesson => lesson.date)).size, 9)
+  const first = Date.parse(result.lessons[0].date), last = Date.parse(result.lessons.at(-1)!.date)
+  assert.ok(last - first >= 60 * 86400000, 'lessons should cover the chosen period')
+})
