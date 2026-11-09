@@ -3,7 +3,7 @@ import { CalendarDays, ExternalLink, Plus } from 'lucide-react'
 import { api, errText } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { Empty, ErrorBox, Loading } from '../components/Status'
-import AdminAccess, { useAdminAccess } from '../components/AdminAccess'
+import { useAdminAccess } from '../components/AdminAccess'
 import { eventAccessLabels, eventDateLabel, safeEventUrl } from '../lib/activities'
 import type { UniversityEvent } from '../lib/activities'
 
@@ -56,7 +56,6 @@ export default function Events() {
   }
   return <div className="max-w-5xl mx-auto space-y-5">
     <header><div className="flex items-center gap-2 text-accent text-xs font-semibold uppercase"><CalendarDays size={16} /> Внеучебная жизнь</div><h1 className="text-2xl font-bold mt-2">Мероприятия</h1><p className="text-muted text-sm mt-2">Каталог событий университета и города. Условия посещения уточняйте у организаторов.</p></header>
-    <AdminAccess />
     {authorized && <a href="#event-management" className="inline-flex text-sm text-accent">Добавить или импортировать мероприятия ↓</a>}
     <form className="card p-4 grid sm:grid-cols-2 lg:grid-cols-3 gap-3" onSubmit={(e) => e.preventDefault()}>
       <label className="text-sm">Название<input className="generation-input" type="search" placeholder="Поиск мероприятий" value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} /></label>
@@ -69,7 +68,7 @@ export default function Events() {
     </form>
     {invalidRange ? <ErrorBox message="Дата окончания фильтра раньше даты начала." /> : data.loading || data.data?.key !== key && !data.error ? <Loading text="Загружаем мероприятия…" /> : data.error ? <ErrorBox message={data.error} onRetry={data.reload} /> : <section className="space-y-3" aria-label="Каталог мероприятий">
       <p className="text-sm text-muted">Найдено: {events.length}</p>
-      {!events.length && <Empty text="Мероприятий с такими условиями пока нет. Измените фильтры или добавьте данные через управление." />}
+      {!events.length && <Empty text="Мероприятий с такими условиями пока нет. Измените условия поиска." />}
       {events.map((event) => { const url = safeEventUrl(event.url); return <article key={event.id} className="card p-4 space-y-2"><div className="flex flex-wrap gap-2 text-xs"><span className="rounded-full bg-accent-soft text-accent px-2 py-1">{event.scope === 'university' ? 'Университет' : 'Город'}</span><span className="rounded-full bg-surface-2 text-muted px-2 py-1">{eventAccessLabels[event.access] ?? event.access}</span></div><h2 className="font-semibold text-lg">{event.title}</h2><p className="text-sm">{eventDateLabel(event)}</p>{event.date_start && event.date_text && <p className="text-xs text-muted">{event.date_text}</p>}{event.note && <p className="text-sm text-muted whitespace-pre-wrap">{event.note}</p>}{event.source && <p className="text-xs text-muted">Источник: {event.source}</p>}{url && <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-accent">Подробности у организатора <ExternalLink size={14} /></a>}</article> })}
     </section>}
     {authorized && <section id="event-management" className="space-y-3 scroll-mt-4"><h2 className="text-lg font-semibold">Управление каталогом</h2><p className="text-xs text-muted">Новые мероприятия публикуются в каталоге. Импорт обновляет записи с теми же ссылкой, названием и датой начала.</p>
