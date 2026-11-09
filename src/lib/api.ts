@@ -31,8 +31,8 @@ export interface RequestOptions {
   timeoutMs?: number
 }
 
-function buildUrl(path: string, query?: Query): string {
-  const url = new URL(`${BASE_URL}/${path.replace(/^\//, '')}`, window.location.origin)
+function buildUrl(path: string, query?: Query, baseUrl = BASE_URL): string {
+  const url = new URL(`${baseUrl}/${path.replace(/^\//, '')}`, window.location.origin)
   for (const [k, v] of Object.entries(query ?? {})) {
     if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v))
   }
@@ -62,13 +62,13 @@ function toApiError(e: unknown): ApiError {
 async function request<T>(
   method: string,
   path: string,
-  opts: RequestOptions & { query?: Query; body?: unknown; signal?: AbortSignal } = {},
+  opts: RequestOptions & { query?: Query; body?: unknown; signal?: AbortSignal; baseUrl?: string } = {},
 ): Promise<T> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? TIMEOUT_MS)
   opts.signal?.addEventListener('abort', () => controller.abort())
   try {
-    const res = await fetch(buildUrl(path, opts.query), {
+    const res = await fetch(buildUrl(path, opts.query, opts.baseUrl), {
       method,
       headers: { ...(adminAuthorization ? { Authorization: adminAuthorization } : {}), ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...opts.headers },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
@@ -86,30 +86,35 @@ async function request<T>(
   }
 }
 
-export const api = {
-  get: <T>(path: string, query?: Query, signal?: AbortSignal) =>
-    request<T>('GET', path, { query, signal }),
-  post: <T>(path: string, body: unknown, options?: RequestOptions) =>
-    request<T>('POST', path, { ...options, body }),
-  patch: <T>(path: string, body: unknown, options?: RequestOptions) =>
-    request<T>('PATCH', path, { ...options, body }),
-  delete: (path: string) => request<void>('DELETE', path),
-  /** Все элементы пагинированного списка DRF. */
-  list: async <T>(path: string, query?: Query, signal?: AbortSignal): Promise<T[]> => {
-    const results: T[] = []
-    let pageNumber = 1
-    let next: string | null
-    do {
-      const page = await request<{ results: T[]; next: string | null }>('GET', path, {
-        query: { ...query, page_size: 1000, page: pageNumber++ },
-        signal,
-      })
-      results.push(...page.results)
-      next = page.next
-    } while (next)
-    return results
-  },
+export function createApi(baseUrl = BASE_URL) {
+  return {
+    get: <T>(path: string, query?: Query, signal?: AbortSignal) =>
+      request<T>('GET', path, { query, signal, baseUrl }),
+    post: <T>(path: string, body: unknown, options?: RequestOptions) =>
+      request<T>('POST', path, { ...options, body, baseUrl }),
+    patch: <T>(path: string, body: unknown, options?: RequestOptions) =>
+      request<T>('PATCH', path, { ...options, body, baseUrl }),
+    delete: (path: string) => request<void>('DELETE', path, { baseUrl }),
+    /** Все элементы пагинированного списка DRF. */
+    list: async <T>(path: string, query?: Query, signal?: AbortSignal): Promise<T[]> => {
+      const results: T[] = []
+      let pageNumber = 1
+      let next: string | null
+      do {
+        const page = await request<{ results: T[]; next: string | null }>('GET', path, {
+          query: { ...query, page_size: 1000, page: pageNumber++ },
+          signal, baseUrl,
+        })
+        results.push(...page.results)
+        next = page.next
+      } while (next)
+      return results
+    },
+  }
 }
+
+export const api = createApi()
+export const dpoApi = createApi(import.meta.env.DEV ? '/__dpo-api' : BASE_URL)
 
 export function errText(e: unknown): string {
   return e instanceof Error ? e.message : 'Неизвестная ошибка'

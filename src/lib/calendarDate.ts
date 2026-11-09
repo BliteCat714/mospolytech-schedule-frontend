@@ -1,4 +1,4 @@
-/** Calendar dates remain ISO internally; the visible input is always day/month/year. */
+/** Keep ISO dates in contracts and display day/month/year independently of browser locale. */
 export function isCalendarDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith('0000')) return false
   const date = new Date(`${value}T12:00:00Z`)
@@ -8,10 +8,4 @@ export function displayCalendarDate(value: string): string {
   if (!isCalendarDate(value)) return value
   const [year, month, day] = value.split('-')
   return `${day}/${month}/${year}`
-}
-export function parseCalendarDate(value: string): string | null {
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value)
-  if (!match) return null
-  const iso = `${match[3]}-${match[2]}-${match[1]}`
-  return isCalendarDate(iso) ? iso : null
 }

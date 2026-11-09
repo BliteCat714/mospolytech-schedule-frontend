@@ -1,64 +1,158 @@
 import { useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, GraduationCap, Plus, Trash2 } from 'lucide-react'
-import { dpoDemoApi, validateDemoProgram } from '../lib/dpoDemo'
-import type { DemoProgram } from '../lib/dpoDemo'
+import { ArrowLeft, ArrowRight, GraduationCap, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { dpoApi as api, errText } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { Empty, ErrorBox, Loading } from '../components/Status'
-import DateInput from '../components/DateInput'
 import { displayCalendarDate } from '../lib/calendarDate'
+import { dpoRunLabel } from '../lib/dpo'
+import type { DPOProgram, DPODiscipline, DPOMembership, DPOGroup, DPOStudent, DPORun, DPOPlanResult } from '../lib/dpo'
+import type { GeneratedSchedule } from '../lib/generation'
+import { dpoBaseRuns, saveDPOForm, validateDPOForm } from '../lib/dpoWorkflow'
+import type { DPOCatalog, DPOForm, DPOSemester, DPOModule, DPOBaseRun, SavedDPO } from '../lib/dpoWorkflow'
 
 const steps = ['Программа', 'Слушатели', 'Дисциплины', 'Расписание']
-const secondary = 'generation-button'
-const today = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}` }
+const days = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
+async function loadCatalog(signal: AbortSignal): Promise<DPOCatalog> {
+  const [semesters, modules, students, teachers, subjects, groups, programs, disciplines, memberships, runs] = await Promise.all([
+    api.list<DPOSemester>('schedule/semesters/', undefined, signal),
+    api.list<DPOModule>('schedule/modules/', undefined, signal),
+    api.list<DPOStudent>('schedule/students/', undefined, signal),
+    api.list<{ id: number; full_name: string }>('schedule/teachers/', undefined, signal),
+    api.list<{ id: number; name: string }>('schedule/subjects/', undefined, signal),
+    api.list<DPOGroup>('schedule/groups/', undefined, signal),
+    api.list<DPOProgram>('schedule/dpo-programs/', undefined, signal),
+    api.list<DPODiscipline>('schedule/dpo-disciplines/', undefined, signal),
+    api.list<DPOMembership>('schedule/dpo-memberships/', undefined, signal),
+    api.list<DPOBaseRun>('schedule/runs/', undefined, signal),
+  ])
+  const programRuns = Object.fromEntries(await Promise.all(programs.map(async program => [program.id,
+    await api.get<DPORun[]>(`schedule/dpo-programs/${program.id}/runs/`, undefined, signal)] as const)))
+  return { semesters, modules, students, teachers, subjects, groups, programs, disciplines, memberships, runs, programRuns }
+}
 export default function DPO() {
-  const catalog = useAsync(() => dpoDemoApi.catalog(), [])
-  const [step, setStep] = useState(0)
-  const [program, setProgram] = useState<DemoProgram>(() => ({ name: '', start: today(), end: today(), groups: [{ id: 1, name: 'Группа ДПО 1', students: [] }], disciplines: [{ id: 1, title: '', teacher: 1, hours: 18 }] }))
-  const nextId = useRef(2)
+  const catalog = useAsync(loadCatalog, [])
+  const [busy, setBusy] = useState(false)
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [lastResult, setLastResult] = useState<{ programId: number; plan: DPOPlanResult } | null>(null)
+  if (catalog.loading) return <Loading text="Загружаем программы и справочники генератора…" />
+  if (catalog.error) return <ErrorBox message={`Не удалось подключиться к генератору. ${catalog.error}`} onRetry={catalog.reload} />
+  if (!catalog.data) return null
+  const selected = selectedId ?? catalog.data.programs[0]?.id ?? 0
+  const existing = catalog.data.programs.find(item => item.id === selected)
+  const existingModule = catalog.data.modules.find(item => item.id === existing?.module)
+  const unsupportedPeriod = existing && (!existingModule || existing.module === null
+    || existing.weeks !== null && existing.weeks !== existingModule.teaching_weeks)
+  return <div className="max-w-5xl mx-auto space-y-5 pb-6">
+    <header><p className="flex items-center gap-2 text-xs font-semibold text-accent"><GraduationCap size={16} />ДОПОЛНИТЕЛЬНОЕ ОБУЧЕНИЕ</p><h1 className="text-2xl font-bold mt-2">Составить расписание ДПО</h1><p className="text-sm text-muted mt-2">Соберите слушателей из основных групп и спланируйте дополнительные занятия.</p></header>
+    <div className="flex flex-wrap items-end gap-3"><label className="text-sm flex-1">Программа<select className="generation-input" disabled={busy} value={selected} onChange={event => { setSelectedId(Number(event.target.value)); setLastResult(null) }}><option value={0}>Новая программа</option>{catalog.data.programs.map(program => <option key={program.id} value={program.id}>{program.name}</option>)}</select></label><button type="button" className="generation-button" disabled={busy} onClick={catalog.reload}><RefreshCw size={15} />Обновить</button></div>
+    {unsupportedPeriod ? <ErrorBox message="В этом интерфейсе поддержаны программы по модулям с числом недель из модуля. Период существующей программы автоматически не меняется." /> : <DPOEditor key={selected} onBusyChange={setBusy} catalog={catalog.data} existing={existing}
+      lastResult={lastResult?.programId === selected ? lastResult.plan : null}
+      onPlanned={(programId, plan) => { setSelectedId(programId); setLastResult({ programId, plan }); catalog.reload() }} />}
+  </div>
+}
+function DPOEditor({ catalog, existing, lastResult, onPlanned, onBusyChange }: { onBusyChange: (busy: boolean) => void; catalog: DPOCatalog; existing?: DPOProgram; lastResult: DPOPlanResult | null; onPlanned: (programId: number, plan: DPOPlanResult) => void }) {
+  const initialModule = catalog.modules.find(module => module.id === existing?.module)
+    ?? [...catalog.modules].reverse().find(module => dpoBaseRuns(catalog, { semester: module.semester, module: module.id }).length)
+    ?? catalog.modules[0]
+  const existingGroups = catalog.groups.filter(group => existing?.groups.includes(group.id))
+  const existingDisciplines = catalog.disciplines.filter(item => item.program === existing?.id)
+  const saved = useRef<SavedDPO>({ programId: existing?.id ?? 0,
+    groupIds: Object.fromEntries(existingGroups.map(group => [`group-${group.id}`, group.id])),
+    disciplineIds: Object.fromEntries(existingDisciplines.map(item => [`discipline-${item.id}`, item.id])) })
+  const [form, setForm] = useState<DPOForm>(() => ({ name: existing?.name ?? '', semester: existing?.semester ?? initialModule?.semester ?? 0,
+    module: existing?.module ?? initialModule?.id ?? 0,
+    groups: existingGroups.length ? existingGroups.map(group => ({ key: `group-${group.id}`, name: group.name,
+      students: catalog.memberships.filter(item => item.group === group.id).map(item => item.student) })) : [{ key: 'new-group-1', name: 'Группа 1', students: [] }],
+    disciplines: existingDisciplines.length ? existingDisciplines.map(item => ({ key: `discipline-${item.id}`, subject: item.subject, teacher: item.teacher,
+      hours: item.total_hours ?? (item.total_pairs ?? 0) * 2, format: item.format })) : [{ key: 'new-discipline-1', subject: 0, teacher: 0, hours: (initialModule?.teaching_weeks ?? 1) * 2, format: 'ONLINE' }],
+  }))
+  const [step, setStep] = useState(lastResult ? 3 : 0)
+  const [activeGroup, setActiveGroup] = useState(form.groups[0].key)
   const [query, setQuery] = useState('')
-  const [sourceGroup, setSourceGroup] = useState('')
-  const [activeGroup, setActiveGroup] = useState(1)
-  const [result, setResult] = useState<Awaited<ReturnType<typeof dpoDemoApi.plan>> | null>(null)
+  const [sourceGroup, setSourceGroup] = useState(0)
+  const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const busy = useRef(false)
-  const [error, setError] = useState<string | null>(null)
-  function update(patch: Partial<DemoProgram>) { setProgram(old => ({ ...old, ...patch })); setResult(null); setError(null) }
+  const nextId = useRef(2)
+  const [savedId, setSavedId] = useState(existing?.id ?? 0)
+  const [runId, setRunId] = useState(lastResult?.run_id ?? catalog.programRuns[existing?.id ?? 0]?.[0]?.id ?? 0)
+  const [viewGroup, setViewGroup] = useState(existingGroups[0]?.id ?? 0)
+  const runs = useAsync(signal => savedId ? api.get<DPORun[]>(`schedule/dpo-programs/${savedId}/runs/`, undefined, signal) : Promise.resolve([]), [savedId])
+  const projection = useAsync(async signal => runId && viewGroup ? { runId, groupId: viewGroup,
+    schedule: await api.get<GeneratedSchedule>(`schedule/schedule/groups/${viewGroup}/`, { run_id: runId }, signal) } : null, [runId, viewGroup])
+  const schedule = projection.data?.runId === runId && projection.data?.groupId === viewGroup ? projection.data.schedule : null
+  const period = catalog.modules.find(module => module.id === form.module)
+  const baseRun = dpoBaseRuns(catalog, form).find(run => run.id === existing?.base_run) ?? dpoBaseRuns(catalog, form)[0]
+  const hasHistory = !!catalog.programRuns[existing?.id ?? 0]?.length
+  const group = form.groups.find(item => item.key === activeGroup) ?? form.groups[0]
+  const students = catalog.students.filter(student => !catalog.groups.find(item => item.id === student.group)?.is_dpo)
+  const visible = students.filter(student => (!sourceGroup || student.group === sourceGroup)
+    && `${student.full_name} ${student.group_name}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  const uniqueStudents = new Set(form.groups.flatMap(item => item.students)).size
+  function update(patch: Partial<DPOForm>) { if (busy.current) return; setForm(old => ({ ...old, ...patch })); setError(null) }
   function move(target: number) {
-    if (target > step) { const problem = validateDemoProgram(program, step); if (problem) { setError(problem); return } }
+    if (busy.current) return
+    if (target > step) { const problem = validateDPOForm(form, catalog, step); if (problem) { setError(problem); return } }
     setError(null); setStep(target)
   }
   async function plan() {
     if (busy.current) return
-    busy.current = true; setPending(true); setError(null)
-    try { setResult(await dpoDemoApi.plan(program)) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Не удалось составить расписание.') }
-    finally { busy.current = false; setPending(false) }
+    const problem = validateDPOForm(form, catalog, 3)
+    if (problem) { setError(problem); return }
+    busy.current = true; setPending(true); onBusyChange(true); setError(null)
+    try {
+      const programId = await saveDPOForm(api, form, catalog, saved.current)
+      setSavedId(programId)
+      const result = await api.post<DPOPlanResult>(`schedule/dpo-programs/${programId}/plan/`, { time_limit_seconds: 30, seed: 17 }, { timeoutMs: 65000 })
+      onPlanned(programId, result)
+    } catch (event) { setSavedId(saved.current.programId); setError(errText(event)); runs.reload() }
+    finally { busy.current = false; setPending(false); onBusyChange(false) }
   }
-  const group = program.groups.find(item => item.id === activeGroup) ?? program.groups[0]
-  const students = catalog.data?.students ?? []
-  const visible = students.filter(student => (!sourceGroup || student.group === sourceGroup) && `${student.name} ${student.group}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
-  const uniqueStudents = new Set(program.groups.flatMap(item => item.students)).size
-  return <div className="max-w-4xl mx-auto space-y-5 pb-6">
-    <header><p className="flex items-center gap-2 text-xs font-semibold text-accent"><GraduationCap size={16} />ДОПОЛНИТЕЛЬНОЕ ОБУЧЕНИЕ</p><h1 className="text-2xl font-bold mt-2">Составить расписание ДПО</h1><p className="text-sm text-muted mt-2">Выберите слушателей и занятия. Их основное расписание остаётся на месте.</p></header>
-    <p className="rounded-xl border border-border bg-surface-2 p-3 text-xs text-muted">Локальное демо: студенты, преподаватели и их занятость вымышлены. Расчёт показывает сценарий интерфейса на тестовых данных; результат не сохраняется на сервере. При обновлении страницы черновик сбросится.</p>
+  return <>
+    <p className="rounded-xl border border-border bg-surface-2 p-3 text-xs text-muted">Расчёт выполняет генератор по данным локальной базы. Состав студентов и часть справочников в ней тестовые. Учитывается сохранённое основное расписание, а не опубликованная лента rasp.</p>
     <ol className="grid grid-cols-2 sm:grid-cols-4 gap-2" aria-label="Этапы программы">{steps.map((label, index) => <li key={label}><button type="button" disabled={index > step || pending} aria-current={index === step ? 'step' : undefined} onClick={() => move(index)} className={`w-full flex items-center gap-2 rounded-xl border p-3 text-sm text-left ${index === step ? 'border-accent bg-accent-soft text-accent' : 'border-border text-muted'} disabled:opacity-50`}><span>{index + 1}.</span>{label}</button></li>)}</ol>
     {error && <ErrorBox message={error} />}
-    {catalog.loading ? <Loading /> : catalog.error ? <ErrorBox message={catalog.error} onRetry={catalog.reload} /> : <>
     <section className="card p-5 space-y-5" aria-label={steps[step]}>
-      {step === 0 && <><h2 className="font-semibold text-lg">Что будем планировать?</h2><label className="block text-sm">Название программы<input className="generation-input" value={program.name} onChange={e => update({ name: e.target.value })} placeholder="Например, основы анализа данных" maxLength={200} /></label><div className="grid sm:grid-cols-2 gap-4"><DateInput label="Начало обучения" value={program.start} onChange={start => update({ start })} /><DateInput label="Окончание обучения" value={program.end} onChange={end => update({ end })} /></div></>}
-      {step === 1 && <><div><h2 className="font-semibold text-lg">Кто будет учиться?</h2><p className="text-sm text-muted mt-1">Соберите группу ДПО из существующих студентов. Студенты останутся в своих основных учебных группах.</p></div>
-        <div className="flex flex-wrap gap-2">{program.groups.map(item => <button type="button" key={item.id} className={secondary} aria-pressed={item.id === group.id} onClick={() => setActiveGroup(item.id)}>{item.name || 'Без названия'} · {item.students.length}</button>)}<button type="button" className={secondary} onClick={() => { const id = nextId.current++; update({ groups: [...program.groups, { id, name: `Группа ДПО ${program.groups.length + 1}`, students: [] }] }); setActiveGroup(id) }}><Plus size={14} />Ещё группа ДПО</button></div>
-        <div className="flex items-end gap-2"><label className="block text-sm flex-1">Название группы ДПО<input className="generation-input" value={group.name} maxLength={50} onChange={e => update({ groups: program.groups.map(item => item.id === group.id ? { ...item, name: e.target.value } : item) })} /></label>{program.groups.length > 1 && <button type="button" className={secondary} aria-label="Удалить группу ДПО" onClick={() => { update({ groups: program.groups.filter(item => item.id !== group.id) }); setActiveGroup(program.groups.find(item => item.id !== group.id)!.id) }}><Trash2 size={16} /></button>}</div>
-        <div className="grid sm:grid-cols-2 gap-3"><label className="text-sm">Поиск студента<input className="generation-input" type="search" placeholder="Имя или учебная группа" value={query} onChange={e => setQuery(e.target.value)} /></label><label className="text-sm">Основная учебная группа<select className="generation-input" value={sourceGroup} onChange={e => setSourceGroup(e.target.value)}><option value="">Все группы</option>{[...new Set(students.map(student => student.group))].map(name => <option key={name}>{name}</option>)}</select></label></div>
-        <div className="grid sm:grid-cols-2 gap-2">{visible.map(student => <label key={student.id} className="flex items-center gap-3 rounded-xl border border-border p-3 cursor-pointer"><input type="checkbox" checked={group.students.includes(student.id)} onChange={e => update({ groups: program.groups.map(item => item.id === group.id ? { ...item, students: e.target.checked ? [...item.students, student.id] : item.students.filter(id => id !== student.id) } : item) })} /><span className="text-sm">{student.name}<span className="block text-xs text-muted">Основная группа: {student.group}</span></span></label>)}</div>{!visible.length && <Empty text="Студенты не найдены. Измените поиск." />}
-        <p className="text-sm text-muted">В этой группе: {group.students.length}. Во всей программе: Слушателей: {uniqueStudents}.</p><p className="text-xs text-muted">{group.students.map(id => students.find(student => student.id === id)?.name).join(', ') || 'Выберите слушателей из списка.'}</p>
+      {step === 0 && <><h2 className="font-semibold text-lg">Что будем планировать?</h2>
+        <label className="block text-sm">Название программы<input className="generation-input" value={form.name} maxLength={200} onChange={event => update({ name: event.target.value })} placeholder="Например, основы анализа данных" /></label>
+        <label className="block text-sm">Период обучения<select className="generation-input" disabled={!!existing} value={form.module} onChange={event => { const module = catalog.modules.find(item => item.id === Number(event.target.value)); update({ module: module?.id ?? 0, semester: module?.semester ?? 0 }) }}>
+          <option value={0}>Выберите учебный модуль</option>{catalog.modules.map(module => <option key={module.id} value={module.id}>{catalog.semesters.find(item => item.id === module.semester)?.name} · модуль {module.number} · {module.teaching_weeks} учебных недель</option>)}
+        </select></label>
+        {period && <p className="text-sm">{displayCalendarDate(period.start_date)} — {displayCalendarDate(period.end_date)} · {period.teaching_weeks} учебных недель</p>}
+        <p className="text-xs text-muted">Генератор составляет повторяющуюся учебную неделю для выбранного модуля. Произвольный диапазон дат пока не поддерживается.</p>
+        <p className="text-sm text-muted">{baseRun ? `Основная занятость: сохранённое расписание №${baseRun.id}. Его занятия останутся на своих местах.` : 'Основное расписание этого периода ещё не рассчитано. Сначала выполните расчёт в разделе «Генерация».'}</p>
       </>}
-      {step === 2 && <><div><h2 className="font-semibold text-lg">Что будут изучать?</h2><p className="text-sm text-muted mt-1">Укажите общий объём каждой дисциплины для каждой группы ДПО. Одна пара — два академических часа.</p></div>{program.disciplines.map((item, index) => <div key={item.id} className="rounded-xl border border-border p-4 space-y-3"><div className="flex justify-between items-center"><h3 className="text-sm font-medium">Дисциплина {index + 1}</h3>{program.disciplines.length > 1 && <button type="button" className={secondary} aria-label={`Удалить дисциплину ${index + 1}`} onClick={() => update({ disciplines: program.disciplines.filter(entry => entry.id !== item.id) })}><Trash2 size={14} /></button>}</div><label className="block text-sm">Название<input className="generation-input" maxLength={200} value={item.title} onChange={e => update({ disciplines: program.disciplines.map(entry => entry.id === item.id ? { ...entry, title: e.target.value } : entry) })} /></label><div className="grid sm:grid-cols-2 gap-3"><label className="text-sm">Преподаватель<select className="generation-input" value={item.teacher} onChange={e => update({ disciplines: program.disciplines.map(entry => entry.id === item.id ? { ...entry, teacher: Number(e.target.value) } : entry) })}>{catalog.data?.teachers.map(teacher => <option key={teacher.id} value={teacher.id}>{teacher.name}</option>)}</select></label><label className="text-sm">Всего академических часов<input type="number" min={2} max={1000} step={2} className="generation-input" value={item.hours || ''} onChange={e => update({ disciplines: program.disciplines.map(entry => entry.id === item.id ? { ...entry, hours: Number(e.target.value) } : entry) })} /></label></div></div>)}<button type="button" className={secondary} onClick={() => update({ disciplines: [...program.disciplines, { id: nextId.current++, title: '', teacher: 1, hours: 18 }] })}><Plus size={14} />Добавить дисциплину</button></>}
-      {step === 3 && <><div><h2 className="font-semibold text-lg">{program.name}</h2><p className="text-sm text-muted mt-1">{displayCalendarDate(program.start)} — {displayCalendarDate(program.end)} · Слушателей: {uniqueStudents} · групп ДПО: {program.groups.length}</p></div><ul className="text-sm space-y-2">{program.disciplines.map(item => <li key={item.id}>{item.title} · {item.hours} ак. ч. на группу · {catalog.data?.teachers.find(teacher => teacher.id === item.teacher)?.name}</li>)}</ul><button type="button" className="generation-primary" disabled={pending} onClick={() => void plan()}>{pending ? 'Составляем…' : result ? 'Пересчитать расписание' : 'Составить расписание'}</button><p className="text-xs text-muted">Занятия распределяются равномерно по выбранному периоду с учётом тестовой занятости слушателей и преподавателей. Это предварительный макет результата, а не ответ серверного генератора.</p>
-        {result && <div aria-live="polite" className="space-y-3"><p className="text-sm font-medium">Размещено пар: {result.lessons.length}{result.missing > 0 ? ` · Не удалось разместить: ${result.missing}. Попробуйте расширить период обучения.` : ''}</p><div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="text-xs text-muted"><tr><th className="p-2">Дата</th><th className="p-2">Пара</th><th className="p-2">Группа ДПО</th><th className="p-2">Занятие</th><th className="p-2">Преподаватель</th></tr></thead><tbody>{result.lessons.map((lesson, index) => <tr key={index} className="border-t border-border"><td className="p-2 whitespace-nowrap">{displayCalendarDate(lesson.date)}</td><td className="p-2">{lesson.pair}</td><td className="p-2">{lesson.group}</td><td className="p-2">{lesson.title}</td><td className="p-2">{lesson.teacher}</td></tr>)}</tbody></table></div></div>}
+      {step === 1 && <><div><h2 className="font-semibold text-lg">Кто будет учиться?</h2><p className="text-sm text-muted mt-1">Выберите существующих студентов. Их основные учебные группы сохранятся.</p></div>
+        <div className="flex flex-wrap gap-2">{form.groups.map(item => <button type="button" key={item.key} className="generation-button" aria-pressed={item.key === group.key} onClick={() => setActiveGroup(item.key)}>{item.name || 'Без названия'} · {item.students.length}</button>)}<button type="button" className="generation-button" onClick={() => { const key = `new-group-${nextId.current++}`; update({ groups: [...form.groups, { key, name: `Группа ${form.groups.length + 1}`, students: [] }] }); setActiveGroup(key) }}><Plus size={14} />Ещё группа ДПО</button></div>
+        <div className="flex items-end gap-2"><label className="text-sm flex-1">Название группы ДПО<input className="generation-input" value={group.name} maxLength={40} onChange={event => update({ groups: form.groups.map(item => item.key === group.key ? { ...item, name: event.target.value } : item) })} /></label>{form.groups.length > 1 && <button type="button" className="generation-button" disabled={hasHistory && !!saved.current.groupIds[group.key]} title="Группу с сохранённым расписанием нельзя удалить из программы" aria-label="Удалить группу ДПО" onClick={() => { update({ groups: form.groups.filter(item => item.key !== group.key) }); setActiveGroup(form.groups.find(item => item.key !== group.key)!.key) }}><Trash2 size={16} /></button>}</div>
+        <div className="grid sm:grid-cols-2 gap-3"><label className="text-sm">Поиск студента<input className="generation-input" type="search" placeholder="Имя или учебная группа" value={query} onChange={event => setQuery(event.target.value)} /></label><label className="text-sm">Основная учебная группа<select className="generation-input" value={sourceGroup} onChange={event => setSourceGroup(Number(event.target.value))}><option value={0}>Все группы</option>{catalog.groups.filter(item => !item.is_dpo).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
+        <div className="grid sm:grid-cols-2 gap-2 max-h-80 overflow-auto">{visible.map(student => <label key={student.id} className="flex items-center gap-3 rounded-xl border border-border p-3 cursor-pointer"><input type="checkbox" checked={group.students.includes(student.id)} onChange={event => update({ groups: form.groups.map(item => item.key === group.key ? { ...item, students: event.target.checked ? [...item.students, student.id] : item.students.filter(id => id !== student.id) } : item) })} /><span className="text-sm">{student.full_name}<span className="block text-xs text-muted">Основная группа: {student.group_name}</span></span></label>)}</div>
+        {!visible.length && <Empty text="Студенты не найдены. Измените поиск." />}<p className="text-sm text-muted">В этой группе: {group.students.length}. Во всей программе: {uniqueStudents}.</p>
+      </>}
+      {step === 2 && <><div><h2 className="font-semibold text-lg">Что будут изучать?</h2><p className="text-sm text-muted mt-1">Объём каждой дисциплины задаётся на каждую группу. Одна пара — два академических часа.</p></div>
+        {form.disciplines.map((item, index) => <div key={item.key} className="rounded-xl border border-border p-4 space-y-3"><div className="flex justify-between items-center"><h3 className="text-sm font-medium">Дисциплина {index + 1}</h3>{form.disciplines.length > 1 && <button type="button" className="generation-button" disabled={hasHistory && !!saved.current.disciplineIds[item.key]} title="Дисциплину с сохранённым расписанием нельзя удалить" aria-label={`Удалить дисциплину ${index + 1}`} onClick={() => update({ disciplines: form.disciplines.filter(entry => entry.key !== item.key) })}><Trash2 size={14} /></button>}</div>
+          <label className="block text-sm">Дисциплина<select className="generation-input" value={item.subject} onChange={event => update({ disciplines: form.disciplines.map(entry => entry.key === item.key ? { ...entry, subject: Number(event.target.value) } : entry) })}><option value={0}>Выберите дисциплину</option>{catalog.subjects.map(subject => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
+          <div className="grid sm:grid-cols-3 gap-3"><label className="text-sm">Преподаватель<select className="generation-input" value={item.teacher} onChange={event => update({ disciplines: form.disciplines.map(entry => entry.key === item.key ? { ...entry, teacher: Number(event.target.value) } : entry) })}><option value={0}>Выберите преподавателя</option>{catalog.teachers.map(teacher => <option key={teacher.id} value={teacher.id}>{teacher.full_name}</option>)}</select></label>
+            <label className="text-sm">Всего академических часов<input type="number" min={2} step={2} className="generation-input" value={item.hours || ''} onChange={event => update({ disciplines: form.disciplines.map(entry => entry.key === item.key ? { ...entry, hours: Number(event.target.value) } : entry) })} /></label>
+            <label className="text-sm">Формат<select className="generation-input" value={item.format} onChange={event => update({ disciplines: form.disciplines.map(entry => entry.key === item.key ? { ...entry, format: event.target.value as 'ONLINE' | 'ONSITE' } : entry) })}><option value="ONLINE">Онлайн</option><option value="ONSITE">Очно</option></select></label></div>
+          <p className="text-xs text-muted">{period && item.hours > 0 && item.hours % (2 * period.teaching_weeks) === 0 ? `Пар в неделю: ${item.hours / (2 * period.teaching_weeks)} · учебных недель: ${period.teaching_weeks}` : `Для этого периода объём должен делиться на ${(period?.teaching_weeks ?? 0) * 2} ак. ч. без остатка.`}</p>
+        </div>)}<button type="button" className="generation-button" onClick={() => update({ disciplines: [...form.disciplines, { key: `new-discipline-${nextId.current++}`, subject: 0, teacher: 0, hours: (period?.teaching_weeks ?? 1) * 2, format: 'ONLINE' }] })}><Plus size={14} />Добавить дисциплину</button>
+      </>}
+      {step === 3 && <><div><h2 className="font-semibold text-lg">{form.name}</h2><p className="text-sm text-muted mt-1">{period && `${displayCalendarDate(period.start_date)} — ${displayCalendarDate(period.end_date)}`} · слушателей: {uniqueStudents} · групп ДПО: {form.groups.length}</p></div>
+        <ul className="text-sm space-y-2">{form.disciplines.map(item => <li key={item.key}>{catalog.subjects.find(subject => subject.id === item.subject)?.name} · {item.hours} ак. ч. на группу · {catalog.teachers.find(teacher => teacher.id === item.teacher)?.full_name}</li>)}</ul>
+        <button type="button" className="generation-primary" disabled={pending} onClick={() => void plan()}>{pending ? 'Сохраняем программу и рассчитываем…' : runId ? 'Пересчитать расписание' : 'Составить расписание'}</button>
+        <p className="text-xs text-muted">Результат сохраняется отдельным запуском. Основные пары не перемещаются. Показана повторяющаяся учебная неделя, а не календарь отдельных дат. После изменения основного расписания нужен новый расчёт ДПО.</p>
+        {lastResult && <p role="status" className="text-sm">Расчёт №{lastResult.run_id}: {dpoRunLabel(lastResult.status)} · размещено {lastResult.scheduled_count} из {lastResult.required_count} пар в неделю. Учтено фоновых пар: {lastResult.background_classes}, других программ ДПО: {lastResult.other_dpo_run_ids.length}.</p>}
+        {!!savedId && <div className="space-y-3"><div className="flex flex-wrap items-end gap-3"><label className="text-sm flex-1">Сохранённый расчёт<select disabled={pending} className="generation-input" value={runId} onChange={event => setRunId(Number(event.target.value))}><option value={0}>Выберите расчёт</option>{runs.data?.map(run => <option key={run.id} value={run.id}>№{run.id} · {dpoRunLabel(run.status)} · {new Date(run.created_at).toLocaleString('ru-RU')}</option>)}</select></label><button type="button" className="generation-button" disabled={pending} onClick={runs.reload}>Проверить результат</button></div>
+          <label className="block text-sm">Группа ДПО<select disabled={pending} className="generation-input" value={viewGroup} onChange={event => setViewGroup(Number(event.target.value))}>{existingGroups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          {runs.error && <ErrorBox message={runs.error} onRetry={runs.reload} />}
+          {projection.loading && <Loading />}{projection.error && <ErrorBox message={projection.error} onRetry={projection.reload} />}
+          {schedule && <div className="space-y-3"><p className="text-sm font-medium">{dpoRunLabel(schedule.run?.status ?? '')} · пар в неделю для группы: {schedule.scheduled_classes.length}</p>{schedule.run?.message && !['SOLVED', 'PARTIAL'].includes(schedule.run.status) && <p className="text-xs text-muted">{schedule.run.message}</p>}{schedule.issues.map(issue => <p key={issue.id} className="text-sm text-amber-700 dark:text-amber-300">{issue.text}</p>)}
+            <div className="overflow-x-auto"><table className="w-full text-sm text-left"><thead className="text-xs text-muted"><tr><th className="p-2">День</th><th className="p-2">Время</th><th className="p-2">Занятие</th><th className="p-2">Преподаватель</th><th className="p-2">Место</th></tr></thead><tbody>{[...schedule.scheduled_classes].sort((a, b) => a.slot_day - b.slot_day || a.slot_lesson_number - b.slot_lesson_number).map(lesson => <tr key={lesson.id} className="border-t border-border"><td className="p-2">{days[lesson.slot_day]}</td><td className="p-2 whitespace-nowrap">{lesson.slot_start_time?.slice(0, 5)}–{lesson.slot_end_time?.slice(0, 5)}</td><td className="p-2">{lesson.subject_name}</td><td className="p-2">{lesson.teacher_name}</td><td className="p-2">{lesson.format === 'ONLINE' ? 'Онлайн' : lesson.room_name ?? 'Не назначено'}</td></tr>)}</tbody></table></div>
+          </div>}
+        </div>}
       </>}
     </section>
-    <div className="flex justify-between gap-3">{step > 0 ? <button type="button" className={secondary} disabled={pending} onClick={() => move(step - 1)}><ArrowLeft size={15} />Назад</button> : <span />}{step < 3 && <button type="button" className="generation-primary" onClick={() => move(step + 1)}>Далее<ArrowRight size={15} /></button>}</div>
-    </>}
-  </div>
+    <div className="flex justify-between gap-3">{step > 0 ? <button type="button" className="generation-button" disabled={pending} onClick={() => move(step - 1)}><ArrowLeft size={15} />Назад</button> : <span />}{step < 3 && <button type="button" className="generation-primary" onClick={() => move(step + 1)}>Далее<ArrowRight size={15} /></button>}</div>
+  </>
 }
