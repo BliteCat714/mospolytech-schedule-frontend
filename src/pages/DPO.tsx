@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, GraduationCap, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { dpoApi as api, errText } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
@@ -34,12 +35,16 @@ async function loadCatalog(signal: AbortSignal): Promise<DPOCatalog> {
 export default function DPO() {
   const catalog = useAsync(loadCatalog, [])
   const [busy, setBusy] = useState(false)
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedId, setSelectedId] = useState<number | null>(() => {
+    const value = new URLSearchParams(window.location.search).get('program')
+    const id = Number(value)
+    return value !== null && Number.isSafeInteger(id) && id >= 0 ? id : null
+  })
   const [lastResult, setLastResult] = useState<{ programId: number; plan: DPOPlanResult } | null>(null)
   if (catalog.loading) return <Loading text="Загружаем программы и справочники генератора…" />
   if (catalog.error) return <ErrorBox message={`Не удалось подключиться к генератору. ${catalog.error}`} onRetry={catalog.reload} />
   if (!catalog.data) return null
-  const selected = selectedId ?? catalog.data.programs[0]?.id ?? 0
+  const selected = selectedId === 0 ? 0 : catalog.data.programs.some(item => item.id === selectedId) ? selectedId! : catalog.data.programs[0]?.id ?? 0
   const existing = catalog.data.programs.find(item => item.id === selected)
   const existingModule = catalog.data.modules.find(item => item.id === existing?.module)
   const unsupportedPeriod = existing && (!existingModule || existing.module === null
@@ -68,21 +73,26 @@ function DPOEditor({ catalog, existing, lastResult, onPlanned, onBusyChange }: {
     disciplines: existingDisciplines.length ? existingDisciplines.map(item => ({ key: `discipline-${item.id}`, subject: item.subject, teacher: item.teacher,
       hours: item.total_hours ?? (item.total_pairs ?? 0) * 2, format: item.format })) : [{ key: 'new-discipline-1', subject: 0, teacher: 0, hours: (initialModule?.teaching_weeks ?? 1) * 2, format: 'ONLINE' }],
   }))
-  const [step, setStep] = useState(lastResult ? 3 : 0)
+  const [step, setStep] = useState(lastResult || existing && new URLSearchParams(window.location.search).get('view') === 'schedule' ? 3 : 0)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const busy = useRef(false)
   const nextId = useRef(2)
   const [savedId, setSavedId] = useState(existing?.id ?? 0)
-  const [runId, setRunId] = useState(lastResult?.run_id ?? catalog.programRuns[existing?.id ?? 0]?.[0]?.id ?? 0)
-  const [previewStudentId, setPreviewStudentId] = useState(0)
-  const [viewGroup, setViewGroup] = useState(existingGroups[0]?.id ?? 0)
+  const [runId, setRunId] = useState(() => {
+    const requested = Number(new URLSearchParams(window.location.search).get('run'))
+    const items = catalog.programRuns[existing?.id ?? 0] ?? []
+    return lastResult?.run_id ?? items.find(item => item.id === requested)?.id ?? items[0]?.id ?? 0
+  })
+  const [previewStudentId, setPreviewStudentId] = useState(() => Number(new URLSearchParams(window.location.search).get('student')) || 0)
+  const [viewGroup, setViewGroup] = useState(() => catalog.memberships.find(item => item.student === previewStudentId && existingGroups.some(group => group.id === item.group))?.group ?? existingGroups[0]?.id ?? 0)
   const runs = useAsync(signal => savedId ? api.get<DPORun[]>(`schedule/dpo-programs/${savedId}/runs/`, undefined, signal) : Promise.resolve([]), [savedId])
   const projection = useAsync(async signal => runId && viewGroup ? { runId, groupId: viewGroup,
     schedule: await api.get<GeneratedSchedule>(`schedule/schedule/groups/${viewGroup}/`, { run_id: runId }, signal) } : null, [runId, viewGroup])
   const schedule = projection.data?.runId === runId && projection.data?.groupId === viewGroup ? projection.data.schedule : null
   const period = catalog.modules.find(module => module.id === form.module)
   const baseRun = dpoBaseRuns(catalog, form).find(run => run.id === existing?.base_run) ?? dpoBaseRuns(catalog, form)[0]
+  const comparisonRun = dpoBaseRuns(catalog, form).find(run => run.id === Number(new URLSearchParams(window.location.search).get('main_run'))) ?? baseRun
   const hasHistory = !!catalog.programRuns[existing?.id ?? 0]?.length
   const students = catalog.students.filter(student => !catalog.groups.find(item => item.id === student.group)?.is_dpo)
   const previewStudents = students.filter(student => catalog.memberships.some(item => item.group === viewGroup && item.student === student.id))
@@ -144,10 +154,12 @@ function DPOEditor({ catalog, existing, lastResult, onPlanned, onBusyChange }: {
         <button type="button" className="generation-primary" disabled={pending} onClick={() => void plan()}>{pending ? 'Сохраняем программу и рассчитываем…' : runId ? 'Пересчитать расписание' : 'Составить расписание'}</button>
         <p className="text-xs text-muted">Результат сохраняется отдельным запуском. Основные пары не перемещаются. Показана повторяющаяся учебная неделя, а не календарь отдельных дат. После изменения основного расписания нужен новый расчёт ДПО.</p>
         {lastResult && <p role="status" className="text-sm">Расчёт №{lastResult.run_id}: {dpoRunLabel(lastResult.status)} · размещено {lastResult.scheduled_count} из {lastResult.required_count} пар в неделю. Учтено фоновых пар: {lastResult.background_classes}, других программ ДПО: {lastResult.other_dpo_run_ids.length}.</p>}
+        {comparisonRun && baseRun && comparisonRun.id !== baseRun.id && <p className="text-xs text-muted">Открыто сравнение с основным расчётом №{comparisonRun.id}. В настройках программы источник №{baseRun.id}; просмотр не меняет его автоматически.</p>}
+        {comparisonRun && <Link className="inline-flex text-sm text-accent underline" to={`/generation?run=${comparisonRun.id}${previewStudent ? `&group=${previewStudent.group}` : ''}`}>Открыть основное расписание в «Генерации»</Link>}
         {!!savedId && <div className="space-y-3"><div className="flex flex-wrap items-end gap-3"><label className="text-sm flex-1">Сохранённый расчёт<select disabled={pending} className="generation-input" value={runId} onChange={event => setRunId(Number(event.target.value))}><option value={0}>Выберите расчёт</option>{runs.data?.map(run => <option key={run.id} value={run.id}>№{run.id} · {dpoRunLabel(run.status)} · {new Date(run.created_at).toLocaleString('ru-RU')}</option>)}</select></label><button type="button" className="generation-button" disabled={pending} onClick={runs.reload}>Проверить результат</button></div>
           <label className="block text-sm">Группа ДПО<select disabled={pending} className="generation-input" value={viewGroup} onChange={event => { setViewGroup(Number(event.target.value)); setPreviewStudentId(0) }}>{existingGroups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          {!!runId && !!baseRun && <label className="block text-sm">Посмотреть вместе с основными занятиями слушателя<select className="generation-input" disabled={pending} value={previewStudent?.id ?? 0} onChange={event => setPreviewStudentId(Number(event.target.value))}><option value={0}>Только расписание группы ДПО</option>{previewStudents.map(student => <option key={student.id} value={student.id}>{student.full_name} · {student.group_name}</option>)}</select></label>}
-          {previewStudent && baseRun && !!runId && <DPOSchedulePreview key={`${previewStudent.id}:${baseRun.id}:${runId}`} student={previewStudent} mainRunId={baseRun.id} dpoRunId={runId} />}
+          {!!runId && !!comparisonRun && <label className="block text-sm">Посмотреть вместе с основными занятиями слушателя<select className="generation-input" disabled={pending} value={previewStudent?.id ?? 0} onChange={event => setPreviewStudentId(Number(event.target.value))}><option value={0}>Только расписание группы ДПО</option>{previewStudents.map(student => <option key={student.id} value={student.id}>{student.full_name} · {student.group_name}</option>)}</select></label>}
+          {previewStudent && comparisonRun && !!runId && <DPOSchedulePreview key={`${previewStudent.id}:${comparisonRun.id}:${runId}`} student={previewStudent} mainRunId={comparisonRun.id} dpoRunId={runId} />}
           {runs.error && <ErrorBox message={runs.error} onRetry={runs.reload} />}
           {projection.loading && <Loading />}{projection.error && <ErrorBox message={projection.error} onRetry={projection.reload} />}
           {schedule && <div className="space-y-3"><p className="text-sm font-medium">{dpoRunLabel(schedule.run?.status ?? '')} · пар в неделю для группы: {schedule.scheduled_classes.length}</p>{schedule.run?.message && !['SOLVED', 'PARTIAL'].includes(schedule.run.status) && <p className="text-xs text-muted">{schedule.run.message}</p>}{schedule.issues.map(issue => <p key={issue.id} className="text-sm text-amber-700 dark:text-amber-300">{issue.text}</p>)}
