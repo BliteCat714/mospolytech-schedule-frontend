@@ -1,3 +1,5 @@
+import { isCalendarDate } from './calendarDate.ts'
+
 /** Local UI fixtures. No student records or schedules are written to the backend. */
 export const demoStudents = [
   { id: 1, name: 'Анна · демо', group: '241-3210', busy: [1, 2, 9] },
@@ -19,7 +21,7 @@ const parseDate = (value: string) => new Date(`${value}T12:00:00Z`)
 export function validateDemoProgram(program: DemoProgram, step: number): string | null {
   if (!program.name.trim()) return 'Укажите название программы.'
   const start = parseDate(program.start), end = parseDate(program.end)
-  if (!Number.isFinite(+start) || !Number.isFinite(+end) || end < start) return 'Укажите корректный период программы.'
+  if (!isCalendarDate(program.start) || !isCalendarDate(program.end) || end < start) return 'Укажите корректный период программы.'
   if (+end - +start > 366 * 86400000) return 'Для демо выберите период не больше года.'
   if (step >= 1) {
     if (!program.groups.length || program.groups.some(group => !group.name.trim() || !group.students.length)) return 'Для каждой группы укажите название и выберите хотя бы одного слушателя.'
