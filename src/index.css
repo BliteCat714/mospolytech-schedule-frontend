@@ -55,12 +55,6 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
-  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.15s ease;
-}
-
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-card-hover);
 }
 
 /* Пунктирная «пустая» ячейка */
@@ -78,11 +72,6 @@
 .day-head {
   border-radius: 12px;
   padding: 6px 0;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.day-head:hover {
-  background: color-mix(in oklab, var(--color-accent) 6%, transparent);
 }
 
 html {
@@ -115,9 +104,9 @@ input.generation-input[type="time"] { -webkit-appearance: none; appearance: none
   font-size: 13px; font-weight: 500; line-height: 20px; cursor: pointer;
 }
 .generation-primary { color: white; background: var(--color-accent); border-color: var(--color-accent); }
-.generation-button:hover { border-color: var(--color-accent); }
+.generation-button:enabled:hover { border-color: var(--color-accent); }
 .generation-button[aria-pressed="true"] { border-color: var(--color-accent); color: var(--color-accent); background: var(--color-accent-soft); }
-.generation-primary:hover { filter: brightness(1.07); }
+.generation-primary:enabled:hover { filter: brightness(1.07); }
 .generation-button:disabled, .generation-primary:disabled { opacity: .5; cursor: not-allowed; }
 .generation-button:focus-visible, .generation-primary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
 .generation-step { width: 28px; height: 28px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--color-accent-soft); color: var(--color-accent); font-size: 13px; font-weight: 700; }
@@ -198,8 +187,8 @@ input.generation-input[type="time"] { -webkit-appearance: none; appearance: none
 .schedule-axis-time { margin-top: 4px; font-size: 10px; line-height: 13px; color: var(--color-muted); text-align: center; font-variant-numeric: tabular-nums; }
 .schedule-cell { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow: auto; }
 .schedule-cell-today { margin-inline: 4px; }
-.lesson-card { padding: 4px 6px 4px 9px; border-radius: 9px; gap: 2px; }
-.lesson-card:hover { transform: none; }
+.lesson-card { padding: 4px 6px 4px 9px; border-radius: 9px; gap: 2px; transition: box-shadow 0.2s ease; }
+.lesson-card:hover { box-shadow: var(--shadow-card-hover); }
 .lesson-type { font-size: 9px; line-height: 12px; max-width: 100%; }
 .lesson-title {
   font-size: 11px;
