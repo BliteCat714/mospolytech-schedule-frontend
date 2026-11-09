@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Briefcase, Calendar, Dumbbell, DoorOpen, LogOut, Moon, Sun, User } from 'lucide-react'
+import { Briefcase, Calendar, Dumbbell, DoorOpen, WandSparkles, LogOut, Moon, Sun, User } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import Favorites from './Favorites'
 import { profileTarget } from '../lib/directory'
@@ -30,6 +30,7 @@ export default function Layout() {
             { to: '/pe', icon: Dumbbell, label: 'Физкультура' },
           ] : []),
           { to: '/rooms', icon: DoorOpen, label: 'Кабинеты' },
+          { to: '/generation', icon: WandSparkles, label: 'Генерация' },
         ].map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
@@ -95,7 +96,7 @@ export default function Layout() {
             {isDark ? <Sun size={18} /> : <Moon size={18} />}
           </button>
         </header>
-        <main className="flex-1 min-h-0 min-w-0 p-3 lg:p-6 overflow-auto">
+        <main className="relative flex-1 min-h-0 min-w-0 p-3 lg:p-6 overflow-auto">
           <Outlet />
         </main>
       </div>

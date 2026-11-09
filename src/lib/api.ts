@@ -3,14 +3,21 @@ const TIMEOUT_MS = 15000
 
 export class ApiError extends Error {
   status: number
-  constructor(message: string, status: number) {
+  body: unknown
+  constructor(message: string, status: number, body?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.body = body
   }
 }
 
 type Query = Record<string, string | number | undefined | null>
+
+export interface RequestOptions {
+  headers?: Record<string, string>
+  timeoutMs?: number
+}
 
 function buildUrl(path: string, query?: Query): string {
   const url = new URL(`${BASE_URL}/${path.replace(/^\//, '')}`, window.location.origin)
@@ -43,21 +50,21 @@ function toApiError(e: unknown): ApiError {
 async function request<T>(
   method: string,
   path: string,
-  opts: { query?: Query; body?: unknown; signal?: AbortSignal } = {},
+  opts: RequestOptions & { query?: Query; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<T> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? TIMEOUT_MS)
   opts.signal?.addEventListener('abort', () => controller.abort())
   try {
     const res = await fetch(buildUrl(path, opts.query), {
       method,
-      headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
+      headers: { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...opts.headers },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
       signal: controller.signal,
     })
     if (res.status === 204) return undefined as T
     const body: unknown = await res.json().catch(() => null)
-    if (!res.ok) throw new ApiError(errorMessage(body, res.status), res.status)
+    if (!res.ok) throw new ApiError(errorMessage(body, res.status), res.status, body)
     return body as T
   } catch (e) {
     if (e instanceof ApiError || opts.signal?.aborted) throw e
@@ -70,7 +77,8 @@ async function request<T>(
 export const api = {
   get: <T>(path: string, query?: Query, signal?: AbortSignal) =>
     request<T>('GET', path, { query, signal }),
-  post: <T>(path: string, body: unknown) => request<T>('POST', path, { body }),
+  post: <T>(path: string, body: unknown, options?: RequestOptions) =>
+    request<T>('POST', path, { ...options, body }),
   delete: (path: string) => request<void>('DELETE', path),
   /** Все элементы пагинированного списка DRF. */
   list: async <T>(path: string, query?: Query, signal?: AbortSignal): Promise<T[]> => {

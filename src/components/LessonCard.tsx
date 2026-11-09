@@ -7,9 +7,10 @@ interface Props {
   onRemove?: () => void
   onOpen: () => void
   selected?: boolean
+  annotation?: string
 }
 
-export default function LessonCard({ lesson, onRemove, onOpen, selected }: Props) {
+export default function LessonCard({ lesson, onRemove, onOpen, selected, annotation }: Props) {
   const accent = typeColor(lesson.type)
   const canRemove = lesson.type === 'pe' && onRemove
 
@@ -31,6 +32,7 @@ export default function LessonCard({ lesson, onRemove, onOpen, selected }: Props
         )}
       </div>
       <p className="lesson-title font-semibold" title={lesson.title}>{lesson.title}</p>
+      {annotation && <p className="shrink-0 truncate text-[9px] leading-[11px] text-muted" title={annotation}>{annotation}</p>}
       <div className="lesson-details mt-auto text-muted min-w-0">
         <p className="flex items-center gap-1" title={lesson.teacher}>
           <UserIcon size={10} className="shrink-0" /><span className="truncate">{lesson.teacher}</span>
