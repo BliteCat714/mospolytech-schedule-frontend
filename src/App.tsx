@@ -9,7 +9,6 @@ import Rooms from './pages/Rooms'
 import Generation from './pages/Generation'
 import DPO from './pages/DPO'
 import Events from './pages/Events'
-import FreePeriods from './pages/FreePeriods'
 import { AdminAccessProvider } from './components/AdminAccess'
 import { targetKey } from './lib/directory'
 
@@ -44,7 +43,7 @@ function AppRoutes() {
         <Route path="/generation" element={<Generation />} />
         <Route path="/dpo" element={<DPO />} />
         <Route path="/events" element={<Events />} />
-        <Route path="/free-periods" element={<FreePeriods />} />
+        <Route path="/free-periods" element={<Navigate to="/events" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

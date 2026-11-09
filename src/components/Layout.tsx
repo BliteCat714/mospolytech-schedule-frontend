@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Briefcase, Calendar, Dumbbell, DoorOpen, WandSparkles, CalendarDays, GraduationCap, Clock, LogOut, Moon, Sun, User } from 'lucide-react'
+import { Briefcase, Calendar, Dumbbell, DoorOpen, WandSparkles, CalendarDays, GraduationCap, LogOut, Moon, Sun, User } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import Favorites from './Favorites'
 import { useAdminAccess } from './AdminAccess'
@@ -35,7 +35,6 @@ export default function Layout() {
           { to: '/generation', icon: WandSparkles, label: 'Генерация' },
           { to: '/dpo', icon: GraduationCap, label: 'ДПО' },
           { to: '/events', icon: CalendarDays, label: 'Мероприятия' },
-          { to: '/free-periods', icon: Clock, label: 'Свободное время' },
         ].map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
