@@ -142,7 +142,7 @@ export interface GeneratedLesson extends Lesson {
 }
 
 const typeMap: Record<string, LessonType> = {
-  LECTURE: 'lecture', PRACTICE: 'practice', LAB: 'lab', PD: 'project', PE: 'pe',
+  LECTURE: 'lecture', PRACTICE: 'practice', LAB: 'lab', PD: 'project', PE: 'pe', DPO: 'dpo',
 }
 const clock = (value: string | null | undefined) => value?.slice(0, 5) ?? ''
 

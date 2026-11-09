@@ -1,12 +1,14 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Briefcase, Calendar, Dumbbell, DoorOpen, WandSparkles, LogOut, Moon, Sun, User } from 'lucide-react'
+import { Briefcase, Calendar, Dumbbell, DoorOpen, WandSparkles, CalendarDays, GraduationCap, LogOut, Moon, Sun, User } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import Favorites from './Favorites'
+import { useAdminAccess } from './AdminAccess'
 import { profileTarget } from '../lib/directory'
 
 export default function Layout() {
   const { user, logout, toggleTheme, isDark, viewSchedule } = useApp()
   const navigate = useNavigate()
+  const { logout: logoutAdmin } = useAdminAccess()
 
   return (
     <div className="h-dvh overflow-hidden app-bg text-text flex">
@@ -31,6 +33,8 @@ export default function Layout() {
           ] : []),
           { to: '/rooms', icon: DoorOpen, label: 'Кабинеты' },
           { to: '/generation', icon: WandSparkles, label: 'Генерация' },
+          { to: '/dpo', icon: GraduationCap, label: 'ДПО' },
+          { to: '/events', icon: CalendarDays, label: 'Мероприятия' },
         ].map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
@@ -75,6 +79,7 @@ export default function Layout() {
             title="Сменить профиль"
             aria-label="Сменить профиль"
             onClick={() => {
+              logoutAdmin()
               logout()
               navigate('/login')
             }}

@@ -111,7 +111,7 @@ export interface PDEnrollment {
   project: PDProject
 }
 
-export type LessonType = 'lecture' | 'practice' | 'lab' | 'project' | 'pe' | 'other'
+export type LessonType = 'lecture' | 'practice' | 'lab' | 'project' | 'pe' | 'dpo' | 'other'
 
 export interface Lesson {
   id: string

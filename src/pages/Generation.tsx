@@ -13,6 +13,7 @@ import GenerationSettingsForm from '../components/GenerationSettingsForm'
 import GenerationEditor from '../components/GenerationEditor'
 import GenerationValidation from '../components/GenerationValidation'
 import SemesterGenerationSummary from '../components/SemesterGenerationSummary'
+import GenerationDPOConnections from '../components/dpo/GenerationDPOConnections'
 import { Empty, ErrorBox, Loading } from '../components/Status'
 
 const positiveId = (value: string | null) => { const id = Number(value); return Number.isSafeInteger(id) && id > 0 ? id : null }
@@ -29,7 +30,7 @@ export default function Generation() {
   const [patternId, setPatternId] = useState(0)
   const [launchGroupId, setLaunchGroupId] = useState(0)
   const [profileId, setProfileId] = useState('')
-  const [viewGroupId, setViewGroupId] = useState(0)
+  const [viewGroupId, setViewGroupId] = useState(() => positiveId(new URLSearchParams(window.location.search).get('group')) ?? 0)
   const [teacherId, setTeacherId] = useState(0)
   const [kind, setKind] = useState<'groups' | 'teachers'>('groups')
   const [settings, setSettings] = useState(defaultGenerationSettings)
@@ -230,8 +231,9 @@ export default function Generation() {
             <GenerationValidation report={validation} />
             {confirmedRun.status !== 'SOLVED' && <p className="text-sm rounded-xl border border-amber-200 bg-amber-50 text-amber-900 p-4">Нагрузка размещена не полностью. {confirmedRun.status === 'UNKNOWN' ? 'Решение не найдено за лимит времени; невозможность не доказана.' : 'Проверьте сообщения о пропущенных занятиях.'}</p>}
             {schedule.issues.length > 0 && <ul className="rounded-xl border border-border p-4 text-sm space-y-1">{schedule.issues.map((issue) => <li key={issue.id}>{issue.text}</li>)}</ul>}
-            <div className="flex flex-wrap justify-between items-center gap-3"><p className="text-xs text-muted max-w-3xl leading-relaxed">Расписание повторяется каждую неделю в пределах выбранных дат. ПД закреплена по точному времени и относится только к её участникам. Лимиты считаются персонально; ПД 14:30–17:40 занимает номера 4 и 5. Проверяется только сохранённый срез данных.</p>{canEdit && !editing && <button className="generation-button" onClick={() => openEditor()}>Редактировать расписание</button>}</div>
+            <div className="flex flex-wrap justify-between items-center gap-3"><p className="text-xs text-muted max-w-3xl leading-relaxed">Расписание повторяется каждую неделю в пределах выбранных дат. ПД закреплена по точному времени и относится только к её участникам. Лимиты считаются персонально; ПД 14:30–17:40 занимает номера 4 и 5. Проверяется только сохранённый срез данных.</p>{kind === 'groups' && group && !variantId && !draft && !editing && <a href="#generation-dpo" className="generation-button">Основное расписание + ДПО</a>}{canEdit && !editing && <button className="generation-button" onClick={() => openEditor()}>Редактировать расписание</button>}</div>
             {!!schedule.scheduled_classes.length || !!schedule.fixed_pd_snapshot.length ? <GeneratedCalendar key={`${runId}-${kind}-${holder?.id}-${variantId}`} schedule={schedule} slots={resultSlots} groupName={kind === 'groups' ? holder?.name : undefined} onEditClass={canEdit && !editorBusy ? openEditor : undefined} onDropClass={canEdit && !editorBusy && !running ? onDropClass : undefined} /> : <Empty text="В этом расчёте нет занятий для выбранного представления." />}
+            {kind === 'groups' && group && !variantId && !draft && !editing && <GenerationDPOConnections key={`${confirmedRun.id}:${group.id}`} run={confirmedRun} groupId={group.id} />}
             {editing && sourceSchedule && canEdit && <GenerationEditor key={`${runId}-${variantId}`} source={sourceSchedule} variantId={variantId} slots={resultSlots} selectedClassId={editClassId} dropProposal={dropProposal} onBusyChange={onEditorBusyChange} onSelect={setEditClassId} onClose={resetEditing} onDraft={setDraft} onSaved={(value) => { setOpenedVariant(value); setVariantId(value.variant!.id); setDraft(null); setEditing(false); setEditClassId(null); variants.reload() }} />}
           </>}
         </>}
