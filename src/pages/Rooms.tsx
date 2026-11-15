@@ -8,6 +8,7 @@ import { matchesSearch } from '../lib/directory'
 import { weekdayNumber } from '../lib/schedule'
 import { useAsync } from '../lib/useAsync'
 import { Empty, ErrorBox, Loading } from '../components/Status'
+import RoomDirections from '../components/RoomDirections'
 
 type StatusFilter = 'all' | 'free' | 'busy'
 
@@ -98,15 +99,20 @@ export default function Rooms() {
         <div className="grid sm:grid-cols-2 gap-2">
           {filtered.slice(0, limit).map((r) => (
             <div key={r.id} className={`p-4 rounded-xl border bg-surface ${r.busy ? 'border-red-300/60 dark:border-red-800/60' : 'border-border'}`}>
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-semibold text-sm truncate" title={r.name}>{r.name}</p>
-                <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full ${r.busy
-                  ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
-                  : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
-                  {r.busy ? 'Занят' : 'Свободен'}
-                </span>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm truncate" title={r.name}>{r.name}</p>
+                  <p className="text-xs text-muted mt-1">{r.location || '—'}</p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-0.5">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${r.busy
+                    ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                    : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
+                    {r.busy ? 'Занят' : 'Свободен'}
+                  </span>
+                  <RoomDirections rooms={[r]} compact />
+                </div>
               </div>
-              <p className="text-xs text-muted mt-1">{r.location || '—'}</p>
               {r.lessons.map((l, i) => (
                 <div key={i} className="mt-2 pt-2 border-t border-border text-xs space-y-1">
                   <p className="font-medium text-text">{l.subject}{l.type ? <span className="text-muted font-normal"> · {l.type}</span> : null}</p>
