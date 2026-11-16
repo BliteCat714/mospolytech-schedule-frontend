@@ -5,6 +5,7 @@ import { ru } from 'date-fns/locale'
 import { CalendarDays, Clock, MapPin, UserRound, Users, X } from 'lucide-react'
 import type { Lesson } from '../lib/types'
 import { LESSON_TYPE_LABELS, typeColor } from '../lib/schedule'
+import RoomDirections from './RoomDirections'
 
 interface Props {
   lesson: Lesson
@@ -78,7 +79,10 @@ export default function LessonDetails({ lesson, date, weekdayLabel, children, us
           </div>
           <div>
             <dt className="flex items-center gap-2 text-xs text-muted mb-1"><MapPin size={14} />Место проведения</dt>
-            <dd className="break-words">{lesson.place}</dd>
+            <dd className="break-words">
+              {lesson.place}
+              <RoomDirections rooms={lesson.rooms} />
+            </dd>
           </div>
           {lesson.format && <div><dt className="text-xs text-muted mb-1">Формат</dt><dd>{formats[lesson.format] ?? lesson.format}</dd></div>}
           {(lesson.group || userGroup) && <div>

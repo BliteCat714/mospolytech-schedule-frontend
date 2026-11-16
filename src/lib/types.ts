@@ -1,3 +1,5 @@
+import type { NavigationRoom } from './mpunav'
+
 export interface PairTime {
   pair: number
   start: string
@@ -129,6 +131,7 @@ export interface Lesson {
   lessonNumber?: number | null
   format?: string
   room?: string | null
+  rooms?: NavigationRoom[]
   location?: string
   stream?: string | null
   project?: string | null
