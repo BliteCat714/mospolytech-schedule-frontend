@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState, type CSSProperties } from 'react'
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { format, addDays, startOfWeek } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { ChevronLeft, ChevronRight, CalendarDays, CalendarPlus, Check, Loader2, Star, ArrowLeft } from 'lucide-react'
@@ -6,7 +6,7 @@ import { useApp } from '../context/AppContext'
 import { profileTarget, targetKey } from '../lib/directory'
 import { api, downloadFile, errText } from '../lib/api'
 import type { Lesson, LessonsResponse, PDEnrollment, PEEnrollment } from '../lib/types'
-import { clientId, enrollmentToLesson, lessonsForDay, pdEnrollmentToLessons, raspToLesson } from '../lib/schedule'
+import { clientId, currentTimePosition, enrollmentToLesson, lessonsForDay, pdEnrollmentToLessons, raspToLesson } from '../lib/schedule'
 import { useAsync } from '../lib/useAsync'
 import LessonCard from '../components/LessonCard'
 import LessonDetails from '../components/LessonDetails'
@@ -22,6 +22,7 @@ export default function Schedule() {
     const isOwn = !!user && !!target && targetKey(profileTarget(user)) === targetKey(target)
     const isFavorite = !!target && favorites.some((f) => targetKey(f) === targetKey(target))
     const [current, setCurrent] = useState(new Date())
+    const [now, setNow] = useState(() => new Date())
     const [pickerOpen, setPickerOpen] = useState(false)
     const [actionError, setActionError] = useState<string | null>(null)
     const [session, setSession] = useState(false)
@@ -30,7 +31,17 @@ export default function Schedule() {
 
     const weekStart = startOfWeek(current, { weekStartsOn: 1 })
     const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
-    const todayIndex = days.findIndex((d) => d.toDateString() === new Date().toDateString())
+    const todayIndex = days.findIndex((d) => d.toDateString() === now.toDateString())
+
+    useEffect(() => {
+        let timer: ReturnType<typeof setTimeout>
+        const tick = () => {
+            setNow(new Date())
+            timer = setTimeout(tick, 60_000 - Date.now() % 60_000)
+        }
+        tick()
+        return () => clearTimeout(timer)
+    }, [])
 
     const times = useMemo(() => demo ? demoTimes : pairTimes.data ?? [], [pairTimes.data, demo])
     const data = useAsync<Lesson[]>(
@@ -65,6 +76,8 @@ export default function Schedule() {
         }
         return [...rows.values()].sort((a, b) => a.start.localeCompare(b.start))
     }, [allLessons, times])
+    const nowPosition = todayIndex >= 0 ? currentTimePosition(slots, now) : undefined
+    const nowTime = format(now, 'HH:mm')
     const filterDay = (date: Date) => lessonsForDay(allLessons, date)
 
     const handleSelectDate = (d: Date) => {
@@ -198,9 +211,14 @@ export default function Schedule() {
                     >
                         {todayIndex >= 0 && <div aria-hidden="true" className="schedule-today-column"
                             style={{ gridColumn: `${todayIndex + 2} / ${todayIndex + 3}` }} />}
+                        {nowPosition && <div aria-hidden="true" className="schedule-now-layer"
+                            style={{ gridRow: `${nowPosition.index + 2} / span 1` }}>
+                            <div className="schedule-now-line"
+                                style={{ top: `calc(${nowPosition.rowFraction * 100}% + ${nowPosition.gapFraction} * var(--schedule-grid-gap))` }} />
+                        </div>}
                         <div className="schedule-axis-heading">Пара</div>
-                        {days.map((d) => {
-                            const isToday = d.toDateString() === new Date().toDateString()
+                        {days.map((d, index) => {
+                            const isToday = index === todayIndex
                             return (
                                 <div
                                     key={format(d, 'yyyy-MM-dd')}
@@ -213,28 +231,35 @@ export default function Schedule() {
                                 </div>
                             )
                         })}
-                        {slots.map((slot) => (
-                            <Fragment key={slot.start}>
-                                <div className="schedule-axis" title={`${slot.start}–${slot.end}`}>
-                                    <span className="schedule-axis-number">{slot.n ?? '•'}</span>
-                                    <span className="schedule-axis-time">{slot.start}<br />–<br />{slot.end}</span>
-                                </div>
-                                {days.map((d) => {
-                                    const cell = filterDay(d).filter((l) => (l.lessonNumber ? l.lessonNumber === slot.n : l.start === slot.start))
-                                    return (
-                                        <div key={format(d, 'yyyy-MM-dd')}
-                                            className={`schedule-cell ${d.toDateString() === new Date().toDateString() ? 'schedule-cell-today' : ''}`}>
-                                            {cell.length === 0 ? <div className="empty-slot h-full" /> : cell.map((l) => (
-                                                <LessonCard key={l.id} lesson={l}
-                                                    selected={selection?.id === l.id && selection.date.toDateString() === d.toDateString()}
-                                                    onOpen={() => { setPickerOpen(false); setSelection({ id: l.id, date: d }) }}
-                                                    onRemove={isOwn && user?.role === 'student' && l.type === 'pe' ? () => removePE(l) : undefined} />
-                                            ))}
-                                        </div>
-                                    )
-                                })}
-                            </Fragment>
-                        ))}
+                        {slots.map((slot, row) => {
+                            const isCurrent = nowPosition?.index === row && nowPosition.rowFraction < 1
+                            const slotTime = `${slot.start}–${slot.end}`
+                            return (
+                                <Fragment key={slot.start}>
+                                    <div className={`schedule-axis ${isCurrent ? 'schedule-axis-current' : ''}`}
+                                        title={slotTime}>
+                                        {isCurrent && <span className="sr-only">Текущая пара</span>}
+                                        <span className="schedule-axis-number">{slot.n ?? '•'}</span>
+                                        <span className="schedule-axis-time">{slot.start}<br />–<br />{slot.end}</span>
+                                    </div>
+                                    {days.map((d, index) => {
+                                        const cell = filterDay(d).filter((l) => (l.lessonNumber ? l.lessonNumber === slot.n : l.start === slot.start))
+                                        return (
+                                            <div key={format(d, 'yyyy-MM-dd')}
+                                                className={`schedule-cell ${index === todayIndex ? 'schedule-cell-today' : ''}`}>
+                                                {cell.length === 0 ? <div className="empty-slot h-full" /> : cell.map((l) => (
+                                                    <LessonCard key={l.id} lesson={l}
+                                                        current={index === todayIndex && (l.start || slot.start) <= nowTime && nowTime < (l.end || slot.end)}
+                                                        selected={selection?.id === l.id && selection.date.toDateString() === d.toDateString()}
+                                                        onOpen={() => { setPickerOpen(false); setSelection({ id: l.id, date: d }) }}
+                                                        onRemove={isOwn && user?.role === 'student' && l.type === 'pe' ? () => removePE(l) : undefined} />
+                                                ))}
+                                            </div>
+                                        )
+                                    })}
+                                </Fragment>
+                            )
+                        })}
                     </div>
                 </div>
             )}
