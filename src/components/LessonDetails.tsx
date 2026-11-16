@@ -91,7 +91,19 @@ export default function LessonDetails({ lesson, date, weekdayLabel, children, us
           </div>}
           {lesson.stream && <div><dt className="text-xs text-muted mb-1">Поток</dt><dd className="break-words">{lesson.stream}</dd></div>}
           {lesson.project && <div><dt className="text-xs text-muted mb-1">Проект</dt><dd>{lesson.project}</dd></div>}
-          {lesson.link && <div><dt className="text-xs text-muted mb-1">Ссылка</dt><dd><a href={lesson.link} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline break-all">{lesson.link}</a></dd></div>}
+          {lesson.webinar ? <div>
+            <dt className="text-xs text-muted mb-1">Вебинар</dt>
+            <dd>{lesson.link
+              ? <a href={lesson.link} target="_blank" rel="noreferrer noopener"
+                className="inline-flex min-h-9 items-center rounded-lg border border-border px-3 font-medium text-accent hover:border-accent hover:bg-accent-soft">
+                Подключиться к вебинару
+              </a>
+              : 'Ссылка на вебинар не указана в расписании'}</dd>
+          </div> : lesson.link && <div>
+            <dt className="text-xs text-muted mb-1">Ссылка</dt>
+            <dd><a href={lesson.link} target="_blank" rel="noreferrer noopener"
+              className="text-accent hover:underline break-all">{lesson.link}</a></dd>
+          </div>}
           {(lesson.dateFrom || lesson.dateTo) && <div>
             <dt className="text-xs text-muted mb-1">Период проведения</dt>
             <dd>{lesson.dateFrom ? displayDate(lesson.dateFrom) : 'Начало не указано'} — {lesson.dateTo ? displayDate(lesson.dateTo) : 'Конец не указан'}</dd>

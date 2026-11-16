@@ -128,6 +128,7 @@ export interface Lesson {
   dateFrom?: string | null
   dateTo?: string | null
   link?: string | null
+  webinar?: boolean
   lessonNumber?: number | null
   format?: string
   room?: string | null

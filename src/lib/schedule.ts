@@ -45,9 +45,23 @@ const TYPE_MAP: Record<string, LessonType> = {
   'Лаб. работа': 'lab',
 }
 
+function httpLink(value?: string | null): string | undefined {
+  const link = value?.trim()
+  if (!link) return
+  try {
+    const url = new URL(link)
+    if (url.protocol === 'https:' || url.protocol === 'http:') return link
+  } catch {
+    // The source sometimes contains only a label.
+  }
+}
+
 export function raspToLesson(l: RaspLesson): Lesson {
   const isProject = l.location === 'ПД'
-  const room = l.rooms[0]
+  const webinar = /webinar|вебинар|онлайн|online/i
+  const webinarRoom = l.rooms.find((room) => webinar.test(room.name) && httpLink(room.url))
+  const link = httpLink(l.e_link) ?? httpLink(webinarRoom?.url)
+    ?? l.rooms.map((room) => httpLink(room.url)).find(Boolean) ?? null
   const place = l.rooms.length
     ? l.rooms.map((r) => r.name).join(', ') + (l.location && !isProject ? ` · ${l.location}` : '')
     : l.location || 'Место не указано'
@@ -59,7 +73,8 @@ export function raspToLesson(l: RaspLesson): Lesson {
     teacher: teachers.join('\n') || '—',
     place,
     rooms: l.rooms.filter((r) => !r.url).map((r) => ({ name: r.name, location: r.location || l.location })),
-    link: l.e_link ?? room?.url ?? null,
+    link,
+    webinar: webinar.test(l.location) || l.rooms.some((room) => webinar.test(room.name)),
     group: l.group,
     location: l.location,
     lessonNumber: l.pair,
