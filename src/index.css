@@ -142,13 +142,51 @@ input.generation-input[type="time"] { -webkit-appearance: none; appearance: none
 
 /* Every time slot gets the same height, using the space left below the toolbar. */
 .schedule-grid {
+  --schedule-grid-gap: 4px;
   position: relative;
   isolation: isolate;
   display: grid;
   height: 100%;
   min-height: calc(32px + var(--slot-count) * 74px);
   grid-template-rows: 28px repeat(var(--slot-count), minmax(0, 1fr));
-  gap: 4px;
+  gap: var(--schedule-grid-gap);
+}
+
+.schedule-now-layer {
+  position: absolute;
+  grid-column: 1 / -1;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.schedule-now-line {
+  position: absolute;
+  inset-inline: calc(var(--schedule-axis-width) - 6px) 0;
+  height: 1px;
+  transform: translateY(-50%);
+  background: color-mix(in oklab, var(--schedule-now-color) 45%, transparent);
+}
+
+.schedule-now-line::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  inset-inline-start: -2px;
+  width: 5px;
+  height: 5px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: var(--schedule-now-color);
+}
+
+.schedule-axis-current {
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--schedule-now-color) 8%, transparent);
+}
+
+.schedule-axis-current .schedule-axis-number {
+  color: var(--schedule-now-color);
 }
 
 .schedule-today-column {
@@ -172,7 +210,9 @@ input.generation-input[type="time"] { -webkit-appearance: none; appearance: none
 .day-head-today .text-muted { color: inherit; }
 
 .schedule-week {
-  grid-template-columns: 64px repeat(7, minmax(0, 1fr));
+  --schedule-axis-width: 64px;
+  --schedule-now-color: #dc2626;
+  grid-template-columns: var(--schedule-axis-width) repeat(7, minmax(0, 1fr));
   min-width: 700px;
 }
 
@@ -199,6 +239,14 @@ input.generation-input[type="time"] { -webkit-appearance: none; appearance: none
 .schedule-cell { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow: auto; }
 .schedule-cell-today { margin-inline: 4px; }
 .lesson-card { padding: 4px 6px 4px 9px; border-radius: 9px; gap: 2px; }
+.lesson-card-current-accent {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 28px;
+  opacity: .23;
+  mask-image: linear-gradient(to right, black, transparent);
+}
 .lesson-card:hover { transform: none; }
 .lesson-type { font-size: 9px; line-height: 12px; max-width: 100%; }
 .lesson-title {

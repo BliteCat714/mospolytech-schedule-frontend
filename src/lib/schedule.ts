@@ -3,6 +3,22 @@ import type { Lesson, LessonType, PairTime, PDEnrollment, PEEnrollment, RaspLess
 
 export const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
+export function currentTimePosition(slots: readonly { start: string; end: string }[], now: Date) {
+  const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5))
+  const current = now.getHours() * 60 + now.getMinutes()
+  const index = slots.findLastIndex((slot) => minutes(slot.start) <= current)
+  if (index < 0) return
+
+  const slot = slots[index]
+  const start = minutes(slot.start)
+  const next = slots[index + 1]
+  const nextStart = next ? minutes(next.start) : Infinity
+  const end = Math.min(slot.end ? minutes(slot.end) : nextStart, nextStart)
+  if (end <= start || !Number.isFinite(end)) return
+  if (current <= end) return { index, rowFraction: (current - start) / (end - start), gapFraction: 0 }
+  if (next) return { index, rowFraction: 1, gapFraction: (current - end) / (nextStart - end) }
+}
+
 export const LESSON_TYPE_LABELS: Record<LessonType, string> = {
   lecture: 'Лекция',
   practice: 'Практика',
